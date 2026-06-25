@@ -1316,14 +1316,12 @@ def view_generated_file(category: str, file_name: str):
 
 # =========================
 # PAGE BUILDER ROUTES
-# =========================
-
+# ==========================
 def safe_page_file_name(page_name: str):
     cleaned = page_name.strip().lower()
     cleaned = cleaned.replace(" ", "_").replace("-", "_")
 
     allowed = []
-
     for char in cleaned:
         if char.isalnum() or char == "_":
             allowed.append(char)
@@ -1337,52 +1335,95 @@ def safe_page_file_name(page_name: str):
 
 
 def extract_code_from_response(text: str):
-    if "```tsx" in text:
-        return text.split("```tsx", 1)[1].split("```", 1)[0].strip()
+    cleaned = (text or "").strip()
 
-    if "```typescript" in text:
-        return text.split("```typescript", 1)[1].split("```", 1)[0].strip()
+    if "```tsx" in cleaned:
+        cleaned = cleaned.split("```tsx", 1)[1].split("```", 1)[0].strip()
+    elif "```typescript" in cleaned:
+        cleaned = cleaned.split("```typescript", 1)[1].split("```", 1)[0].strip()
+    elif "```jsx" in cleaned:
+        cleaned = cleaned.split("```jsx", 1)[1].split("```", 1)[0].strip()
+    elif "```" in cleaned:
+        cleaned = cleaned.split("```", 1)[1].split("```", 1)[0].strip()
 
-    if "```" in text:
-        return text.split("```", 1)[1].split("```", 1)[0].strip()
+    if cleaned.startswith("jsx"):
+        cleaned = cleaned[3:].strip()
 
-    return text.strip()
+    if cleaned.startswith("tsx"):
+        cleaned = cleaned[3:].strip()
+
+    if '"use client";' not in cleaned and "'use client';" not in cleaned:
+        cleaned = '"use client";\n\n' + cleaned
+
+    return cleaned
+
+
+def validate_generated_page_code(code: str):
+    errors = []
+
+    if not code.strip():
+        errors.append("Generated code is empty.")
+
+    if "export default function" not in code and "export default" not in code:
+        errors.append("Missing export default component.")
+
+    if "return (" not in code and "return <" not in code:
+        errors.append("Missing JSX return block.")
+
+    if len(code.strip()) < 1000:
+        errors.append("Generated code is too short. It looks like a snippet, not a full page.")
+
+    bad_snippet_signals = [
+        "const expensiveValue",
+        "data.filter",
+        "map(transform)",
+    ]
+
+    for signal in bad_snippet_signals:
+        if signal in code:
+            errors.append(f"Bad snippet detected: {signal}")
+
+    return errors
 
 
 @app.post("/builder/generate-page")
 def generate_page_code(request: PageBuildRequest):
-    nvidia_api_key = os.getenv("NVIDIA_API_KEY")
+    try:
+        nvidia_api_key = os.getenv("NVIDIA_API_KEY")
 
-    if not nvidia_api_key:
-        return {
-            "ok": False,
-            "message": "NVIDIA_API_KEY is missing in .env.",
-        }
+        if not nvidia_api_key:
+            return {
+                "ok": False,
+                "message": "NVIDIA_API_KEY is missing in .env.",
+            }
 
-    memory_context = build_memory_context()
+        memory_context = build_memory_context()
 
-    client = OpenAI(
-        base_url="https://integrate.api.nvidia.com/v1",
-        api_key=nvidia_api_key,
-    )
+        client = OpenAI(
+            base_url="https://integrate.api.nvidia.com/v1",
+            api_key=nvidia_api_key,
+        )
 
-    prompt = f"""
+        prompt = f"""
 You are a senior frontend engineer inside Devendra's private AI Agent OS.
 
-Generate one complete React + Tailwind page component.
+Generate one complete React + Tailwind TSX page component.
 
-IMPORTANT RULES:
-- Output only TSX code.
-- Use Next.js App Router style.
+STRICT OUTPUT RULES:
+- Return only TSX code.
+- Do not write explanations.
+- Do not use markdown fences.
 - The file must start with "use client";
+- Must include export default function.
+- Must include a complete JSX return layout.
+- Must be a full page, not a tiny snippet.
+- Use Next.js App Router style.
 - Use React functional component.
 - Use Tailwind CSS only.
 - Do not import external UI libraries.
 - Do not use shadcn unless explicitly asked.
-- Make it dark, modern, clean, and production-quality.
+- Make it dark, modern, clean, responsive, and production-quality.
 - Use the saved UI memory when useful.
-- Do not explain the code.
-- Do not wrap output in markdown unless unavoidable.
 
 PAGE NAME:
 {request.page_name}
@@ -1397,45 +1438,124 @@ SHARED MEMORY:
 {memory_context}
 """.strip()
 
-    completion = client.chat.completions.create(
-        model=request.model,
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are a React, Next.js, Tailwind frontend code generator. "
-                    "Return clean TSX code only."
-                ),
-            },
-            {
-                "role": "user",
-                "content": prompt,
-            },
-        ],
-        temperature=0.2,
-        max_tokens=4000,
-    )
+        completion = client.chat.completions.create(
+            model=request.model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a strict Next.js App Router TSX page generator. "
+                        "Return only one complete TSX page file. No explanations. No markdown."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
+            ],
+            temperature=0.15,
+            max_tokens=5000,
+        )
 
-    raw_output = completion.choices[0].message.content or ""
-    code = extract_code_from_response(raw_output)
+        raw_output = completion.choices[0].message.content or ""
+        code = extract_code_from_response(raw_output)
 
-    file_name = safe_page_file_name(request.page_name)
-    output_file = GENERATED_PAGES_DIR / file_name
-    output_file.write_text(code, encoding="utf-8")
+        validation_errors = validate_generated_page_code(code)
 
-    return {
-        "ok": True,
-        "message": "Page generated successfully.",
-        "page_name": request.page_name,
-        "route_path": request.route_path,
-        "model": request.model,
-        "file_name": file_name,
-        "saved_file": str(output_file),
-        "view_url": f"/generated/pages/{file_name}",
-        "code": code,
-    }
+        if validation_errors:
+            repair_prompt = f"""
+The previous model output was invalid.
 
+VALIDATION ERRORS:
+{validation_errors}
 
+BAD OUTPUT:
+{raw_output}
+
+Regenerate the page correctly.
+
+STRICT RULES:
+- Return one full valid TSX file only.
+- Must start with "use client";
+- Must include export default function.
+- Must include a complete JSX return layout.
+- Must be at least 1000 characters.
+- Must not return tiny snippets.
+- Must not return explanations.
+- Must not use markdown fences.
+- Must use Tailwind CSS only.
+- Must not import external UI libraries.
+
+PAGE NAME:
+{request.page_name}
+
+ROUTE PATH:
+{request.route_path}
+
+DESCRIPTION:
+{request.description}
+
+MEMORY:
+{memory_context}
+""".strip()
+
+            repair_completion = client.chat.completions.create(
+                model=request.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a strict Next.js App Router TSX page generator. "
+                            "Return only one complete TSX page file. No explanations."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": repair_prompt,
+                    },
+                ],
+                temperature=0.1,
+                max_tokens=5000,
+            )
+
+            raw_output = repair_completion.choices[0].message.content or ""
+            code = extract_code_from_response(raw_output)
+            validation_errors = validate_generated_page_code(code)
+
+            if validation_errors:
+                return {
+                    "ok": False,
+                    "message": "Generated page failed validation.",
+                    "errors": validation_errors,
+                    "raw_output": raw_output,
+                }
+
+        file_name = safe_page_file_name(request.page_name)
+        output_file = GENERATED_PAGES_DIR / file_name
+        output_file.write_text(code, encoding="utf-8")
+
+        return {
+            "ok": True,
+            "message": "Page generated successfully.",
+            "page_name": request.page_name,
+            "route_path": request.route_path,
+            "model": request.model,
+            "file_name": file_name,
+            "saved_file": str(output_file),
+            "view_url": f"/generated/pages/{file_name}",
+            "code_length": len(code),
+            "code": code,
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Page generation error.",
+            "error": str(error),
+        }
+    
+
+    
 def safe_route_to_page_file(route_path: str):
     cleaned = route_path.strip()
 

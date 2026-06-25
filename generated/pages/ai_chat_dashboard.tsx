@@ -1,1 +1,0 @@
-jsx\nconst ListItem = React.memo(({ item }) => {\n  return <div>{item.name}</div>;\n});\n
