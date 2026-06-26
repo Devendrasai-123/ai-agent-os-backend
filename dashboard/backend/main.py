@@ -5064,3 +5064,70 @@ def latest_agent_workflow_report_preview():
             "error": str(error),
         }
 
+
+# ============================================================
+# Recent Activity Timeline v1
+# ============================================================
+
+@app.get("/activity/recent")
+def recent_activity_timeline():
+    try:
+        activity_items = []
+
+        scan_targets = [
+            {"label": "Current Run", "path": globals().get("CURRENT_RUN_DIR")},
+            {"label": "Generated Pages", "path": globals().get("GENERATED_PAGES_DIR")},
+            {"label": "Generated Reports", "path": globals().get("GENERATED_REPORTS_DIR")},
+            {"label": "Generated Designs", "path": globals().get("GENERATED_DESIGNS_DIR")},
+            {"label": "Safe Install Backups", "path": globals().get("SAFE_INSTALL_BACKUPS_DIR")},
+            {"label": "Memory", "path": CREWAI_DIR / "memory"},
+        ]
+
+        for target in scan_targets:
+            folder = target.get("path")
+
+            if not folder:
+                continue
+
+            try:
+                folder.mkdir(parents=True, exist_ok=True)
+
+                for file in folder.glob("*"):
+                    if not file.is_file():
+                        continue
+
+                    stat = file.stat()
+
+                    activity_items.append(
+                        {
+                            "category": target["label"],
+                            "file_name": file.name,
+                            "path": str(file),
+                            "modified": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+                            "size_kb": round(stat.st_size / 1024, 2),
+                            "extension": file.suffix or "file",
+                        }
+                    )
+            except Exception:
+                continue
+
+        activity_items = sorted(
+            activity_items,
+            key=lambda item: item["modified"],
+            reverse=True,
+        )[:80]
+
+        return {
+            "ok": True,
+            "count": len(activity_items),
+            "items": activity_items,
+            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to load recent activity.",
+            "error": str(error),
+        }
+
