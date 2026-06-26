@@ -5131,3 +5131,122 @@ def recent_activity_timeline():
             "error": str(error),
         }
 
+
+# ============================================================
+# Agent Workflow Reports v1
+# ============================================================
+
+@app.post("/agent-workflow/report")
+def generate_agent_workflow_report():
+    try:
+        AGENT_WORKFLOW_FILE.parent.mkdir(parents=True, exist_ok=True)
+        GENERATED_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+        if not AGENT_WORKFLOW_FILE.exists():
+            workflow = default_agent_workflow("No workflow existed, so a default workflow was used.")
+        else:
+            workflow = json.loads(AGENT_WORKFLOW_FILE.read_text(encoding="utf-8"))
+
+        report_name = datetime.now().strftime("workflow_report_%Y%m%d_%H%M%S.md")
+        report_path = GENERATED_REPORTS_DIR / report_name
+
+        stages = workflow.get("stages", [])
+
+        stage_text = ""
+        for index, stage in enumerate(stages, start=1):
+            stage_text += f"""
+## Stage {index}: {stage.get("agent", "Unknown Agent")}
+
+- Status: {stage.get("status", "")}
+- Progress: {stage.get("progress", 0)}%
+- Task: {stage.get("task", "")}
+- Output: {stage.get("output", "No output yet.")}
+"""
+
+        report_markdown = f"""
+# Agent Workflow Report
+
+Generated at: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+## Workflow Summary
+
+- Run ID: {workflow.get("run_id", "No run ID")}
+- Status: {workflow.get("status", "unknown")}
+- Created At: {workflow.get("created_at", "")}
+- Updated At: {workflow.get("updated_at", "")}
+
+## User Request
+
+{workflow.get("user_request", "No request found.")}
+
+# Agent Stages
+
+{stage_text}
+
+## Safety Notes
+
+- This report does not edit files.
+- This report is generated from local workflow memory.
+- Use Safe Install before writing or replacing generated pages.
+- Keep secrets only inside backend `.env`.
+""".strip()
+
+        report_path.write_text(report_markdown, encoding="utf-8")
+
+        return {
+            "ok": True,
+            "message": "Workflow report generated.",
+            "file_name": report_name,
+            "path": str(report_path),
+            "chars": len(report_markdown),
+            "preview": report_markdown[:1500],
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to generate workflow report.",
+            "error": str(error),
+        }
+
+
+@app.get("/agent-workflow/reports")
+def list_agent_workflow_reports():
+    try:
+        GENERATED_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+        reports = sorted(
+            GENERATED_REPORTS_DIR.glob("workflow_report_*.md"),
+            key=lambda file: file.stat().st_mtime,
+            reverse=True,
+        )
+
+        items = []
+
+        for file in reports[:50]:
+            stat = file.stat()
+            content = file.read_text(encoding="utf-8", errors="ignore")
+
+            items.append(
+                {
+                    "file_name": file.name,
+                    "modified": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+                    "size_kb": round(stat.st_size / 1024, 2),
+                    "preview": content[:800],
+                }
+            )
+
+        return {
+            "ok": True,
+            "count": len(items),
+            "items": items,
+            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to list workflow reports.",
+            "error": str(error),
+        }
+
