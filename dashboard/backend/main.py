@@ -4175,3 +4175,481 @@ def dashboard_output_files():
             "message": "Failed to load dashboard output files.",
             "error": str(error),
         }
+# ============================================================
+# Agent Assignments Board v1
+# ============================================================
+
+import json
+from datetime import datetime
+
+AGENT_ASSIGNMENTS_FILE = CREWAI_DIR / "memory" / "agent_assignments.json"
+
+
+def default_agent_assignments():
+    return [
+        {
+            "agent": "Product Manager",
+            "status": "ready",
+            "progress": 0,
+            "current_task": "Convert user idea and Project Brain into clear product requirements.",
+            "next_output": "Product requirements and feature priority.",
+        },
+        {
+            "agent": "UI/UX Designer",
+            "status": "ready",
+            "progress": 0,
+            "current_task": "Create layout direction, sections, user flow, and visual hierarchy.",
+            "next_output": "UI structure and design rules.",
+        },
+        {
+            "agent": "Frontend Developer",
+            "status": "ready",
+            "progress": 0,
+            "current_task": "Plan Next.js pages, components, states, and frontend validation.",
+            "next_output": "Frontend files and generated page plan.",
+        },
+        {
+            "agent": "Backend Developer",
+            "status": "ready",
+            "progress": 0,
+            "current_task": "Plan FastAPI routes, memory files, validation, and backend safety.",
+            "next_output": "Backend route plan and API contract.",
+        },
+        {
+            "agent": "QA Tester",
+            "status": "ready",
+            "progress": 0,
+            "current_task": "Define build tests, backend compile tests, and rollback checks.",
+            "next_output": "QA checklist and commands.",
+        },
+        {
+            "agent": "Project Reviewer",
+            "status": "ready",
+            "progress": 0,
+            "current_task": "Review risks, missing questions, privacy, and next safest action.",
+            "next_output": "Final review and next action.",
+        },
+    ]
+
+
+def load_agent_assignments_board():
+    AGENT_ASSIGNMENTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+    if not AGENT_ASSIGNMENTS_FILE.exists():
+        assignments = default_agent_assignments()
+        AGENT_ASSIGNMENTS_FILE.write_text(
+            json.dumps(assignments, indent=2),
+            encoding="utf-8",
+        )
+        return assignments
+
+    try:
+        return json.loads(AGENT_ASSIGNMENTS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        assignments = default_agent_assignments()
+        AGENT_ASSIGNMENTS_FILE.write_text(
+            json.dumps(assignments, indent=2),
+            encoding="utf-8",
+        )
+        return assignments
+
+
+def latest_assignment_source_report():
+    try:
+        GENERATED_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+        reports = sorted(
+            GENERATED_REPORTS_DIR.glob("agent_decision_*.md"),
+            key=lambda file: file.stat().st_mtime,
+            reverse=True,
+        )
+
+        if not reports:
+            return {
+                "file_name": "",
+                "modified": "",
+                "preview": "No decision report found yet.",
+            }
+
+        latest = reports[0]
+        content = latest.read_text(encoding="utf-8", errors="ignore")
+
+        return {
+            "file_name": latest.name,
+            "modified": datetime.fromtimestamp(latest.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+            "preview": content[:800],
+        }
+
+    except Exception as error:
+        return {
+            "file_name": "",
+            "modified": "",
+            "preview": f"Could not read latest decision report: {error}",
+        }
+
+
+@app.get("/agent-assignments")
+def get_agent_assignments_board():
+    try:
+        assignments = load_agent_assignments_board()
+
+        return {
+            "ok": True,
+            "count": len(assignments),
+            "assignments": assignments,
+            "source_report": latest_assignment_source_report(),
+            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to load agent assignments.",
+            "error": str(error),
+        }
+
+
+@app.post("/agent-assignments/reset")
+def reset_agent_assignments_board():
+    try:
+        assignments = default_agent_assignments()
+
+        AGENT_ASSIGNMENTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        AGENT_ASSIGNMENTS_FILE.write_text(
+            json.dumps(assignments, indent=2),
+            encoding="utf-8",
+        )
+
+        return {
+            "ok": True,
+            "message": "Agent assignments reset.",
+            "assignments": assignments,
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to reset agent assignments.",
+            "error": str(error),
+        }
+
+
+# ============================================================
+# Agent Assignments Board v1
+# ============================================================
+
+import json
+from datetime import datetime
+
+AGENT_ASSIGNMENTS_FILE = CREWAI_DIR / "memory" / "agent_assignments.json"
+
+
+def default_agent_assignments():
+    return [
+        {
+            "agent": "Product Manager",
+            "status": "ready",
+            "progress": 0,
+            "current_task": "Convert user idea and Project Brain into clear product requirements.",
+            "next_output": "Product requirements and feature priority.",
+        },
+        {
+            "agent": "UI/UX Designer",
+            "status": "ready",
+            "progress": 0,
+            "current_task": "Create layout direction, sections, user flow, and visual hierarchy.",
+            "next_output": "UI structure and design rules.",
+        },
+        {
+            "agent": "Frontend Developer",
+            "status": "ready",
+            "progress": 0,
+            "current_task": "Plan Next.js pages, components, states, and frontend validation.",
+            "next_output": "Frontend files and generated page plan.",
+        },
+        {
+            "agent": "Backend Developer",
+            "status": "ready",
+            "progress": 0,
+            "current_task": "Plan FastAPI routes, memory files, validation, and backend safety.",
+            "next_output": "Backend route plan and API contract.",
+        },
+        {
+            "agent": "QA Tester",
+            "status": "ready",
+            "progress": 0,
+            "current_task": "Define build tests, backend compile tests, and rollback checks.",
+            "next_output": "QA checklist and commands.",
+        },
+        {
+            "agent": "Project Reviewer",
+            "status": "ready",
+            "progress": 0,
+            "current_task": "Review risks, missing questions, privacy, and next safest action.",
+            "next_output": "Final review and next action.",
+        },
+    ]
+
+
+def load_agent_assignments_board():
+    AGENT_ASSIGNMENTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+    if not AGENT_ASSIGNMENTS_FILE.exists():
+        assignments = default_agent_assignments()
+        AGENT_ASSIGNMENTS_FILE.write_text(
+            json.dumps(assignments, indent=2),
+            encoding="utf-8",
+        )
+        return assignments
+
+    try:
+        return json.loads(AGENT_ASSIGNMENTS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        assignments = default_agent_assignments()
+        AGENT_ASSIGNMENTS_FILE.write_text(
+            json.dumps(assignments, indent=2),
+            encoding="utf-8",
+        )
+        return assignments
+
+
+def latest_assignment_source_report():
+    try:
+        GENERATED_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+        reports = sorted(
+            GENERATED_REPORTS_DIR.glob("agent_decision_*.md"),
+            key=lambda file: file.stat().st_mtime,
+            reverse=True,
+        )
+
+        if not reports:
+            return {
+                "file_name": "",
+                "modified": "",
+                "preview": "No decision report found yet.",
+            }
+
+        latest = reports[0]
+        content = latest.read_text(encoding="utf-8", errors="ignore")
+
+        return {
+            "file_name": latest.name,
+            "modified": datetime.fromtimestamp(latest.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+            "preview": content[:800],
+        }
+
+    except Exception as error:
+        return {
+            "file_name": "",
+            "modified": "",
+            "preview": f"Could not read latest decision report: {error}",
+        }
+
+
+@app.get("/agent-assignments")
+def get_agent_assignments_board():
+    try:
+        assignments = load_agent_assignments_board()
+
+        return {
+            "ok": True,
+            "count": len(assignments),
+            "assignments": assignments,
+            "source_report": latest_assignment_source_report(),
+            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to load agent assignments.",
+            "error": str(error),
+        }
+
+
+@app.post("/agent-assignments/reset")
+def reset_agent_assignments_board():
+    try:
+        assignments = default_agent_assignments()
+
+        AGENT_ASSIGNMENTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        AGENT_ASSIGNMENTS_FILE.write_text(
+            json.dumps(assignments, indent=2),
+            encoding="utf-8",
+        )
+
+        return {
+            "ok": True,
+            "message": "Agent assignments reset.",
+            "assignments": assignments,
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to reset agent assignments.",
+            "error": str(error),
+        }
+
+
+# ============================================================
+# Agent Assignments Board v1 - Simple Backend
+# ============================================================
+
+AGENT_ASSIGNMENTS_FILE = CREWAI_DIR / "memory" / "agent_assignments.json"
+
+
+def simple_default_agent_assignments():
+    return [
+        {
+            "agent": "Product Manager",
+            "status": "ready",
+            "progress": 0,
+            "current_task": "Convert user idea and Project Brain into product requirements.",
+            "next_output": "Product requirements and feature priority.",
+        },
+        {
+            "agent": "UI/UX Designer",
+            "status": "ready",
+            "progress": 0,
+            "current_task": "Create layout, sections, user flow, and design rules.",
+            "next_output": "UI structure and visual direction.",
+        },
+        {
+            "agent": "Frontend Developer",
+            "status": "ready",
+            "progress": 0,
+            "current_task": "Plan Next.js pages, components, states, and validation.",
+            "next_output": "Frontend implementation plan.",
+        },
+        {
+            "agent": "Backend Developer",
+            "status": "ready",
+            "progress": 0,
+            "current_task": "Plan FastAPI routes, memory files, validation, and safety.",
+            "next_output": "Backend route plan and API contract.",
+        },
+        {
+            "agent": "QA Tester",
+            "status": "ready",
+            "progress": 0,
+            "current_task": "Define build tests, backend compile tests, and rollback checks.",
+            "next_output": "QA checklist and commands.",
+        },
+        {
+            "agent": "Project Reviewer",
+            "status": "ready",
+            "progress": 0,
+            "current_task": "Review risks, missing questions, privacy, and next safest action.",
+            "next_output": "Final review and next action.",
+        },
+    ]
+
+
+def simple_latest_decision_report_preview():
+    try:
+        reports = sorted(
+            GENERATED_REPORTS_DIR.glob("agent_decision_*.md"),
+            key=lambda file: file.stat().st_mtime,
+            reverse=True,
+        )
+
+        if not reports:
+            return {
+                "file_name": "",
+                "modified": "",
+                "preview": "No decision report found yet.",
+            }
+
+        latest = reports[0]
+        content = latest.read_text(encoding="utf-8", errors="ignore")
+
+        return {
+            "file_name": latest.name,
+            "modified": datetime.fromtimestamp(latest.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+            "preview": content[:800],
+        }
+
+    except Exception as error:
+        return {
+            "file_name": "",
+            "modified": "",
+            "preview": f"Could not read latest decision report: {error}",
+        }
+
+
+@app.get("/agent-assignments")
+def simple_get_agent_assignments():
+    return {
+        "ok": True,
+        "count": 6,
+        "assignments": simple_default_agent_assignments(),
+        "source_report": simple_latest_decision_report_preview(),
+        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+
+@app.post("/agent-assignments/reset")
+def simple_reset_agent_assignments():
+    return {
+        "ok": True,
+        "message": "Agent assignments reset.",
+        "assignments": simple_default_agent_assignments(),
+    }
+
+
+
+# ============================================================
+# Page Builder Project Brain Context
+# ============================================================
+
+@app.get("/page-builder/context")
+def page_builder_context():
+    try:
+        project_brain_file = CREWAI_DIR / "memory" / "project_brain.md"
+
+        def read_context_file(file_path: Path, max_chars: int = 8000):
+            if not file_path.exists():
+                return ""
+            content = file_path.read_text(encoding="utf-8", errors="ignore")
+            if len(content) > max_chars:
+                return content[-max_chars:]
+            return content
+
+        project_brain = read_context_file(project_brain_file, 12000)
+        long_memory = read_context_file(LONG_TERM_MEMORY, 8000)
+        ui_style = read_context_file(UI_STYLE_MEMORY, 8000)
+        page_plan = read_context_file(PAGE_PLAN_MEMORY, 8000)
+
+        feature_registry = ""
+
+        try:
+            if FEATURE_REGISTRY_FILE.exists():
+                feature_registry = FEATURE_REGISTRY_FILE.read_text(
+                    encoding="utf-8",
+                    errors="ignore",
+                )
+        except Exception:
+            feature_registry = ""
+
+        return {
+            "ok": True,
+            "project_brain_exists": project_brain_file.exists(),
+            "project_brain_chars": len(project_brain),
+            "long_memory_chars": len(long_memory),
+            "ui_style_chars": len(ui_style),
+            "page_plan_chars": len(page_plan),
+            "feature_registry_chars": len(feature_registry),
+            "project_brain_preview": project_brain[:1200],
+            "ui_style_preview": ui_style[:800],
+            "page_plan_preview": page_plan[:800],
+            "message": "Page Builder context loaded.",
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to load Page Builder context.",
+            "error": str(error),
+        }
