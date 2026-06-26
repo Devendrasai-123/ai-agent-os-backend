@@ -4737,3 +4737,139 @@ STRICT RULES:
             "error": str(error),
         }
 
+
+# ============================================================
+# Agent Workflow Board v1
+# ============================================================
+
+AGENT_WORKFLOW_FILE = CREWAI_DIR / "memory" / "agent_workflow_latest.json"
+
+
+def default_agent_workflow(user_request: str = "No request yet."):
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    return {
+        "ok": True,
+        "run_id": datetime.now().strftime("workflow_%Y%m%d_%H%M%S"),
+        "status": "planned",
+        "created_at": now,
+        "updated_at": now,
+        "user_request": user_request,
+        "stages": [
+            {
+                "agent": "Product Manager",
+                "status": "done",
+                "progress": 100,
+                "task": "Understand the request and define product requirements.",
+                "output": "Requirement plan created.",
+            },
+            {
+                "agent": "UI/UX Designer",
+                "status": "waiting",
+                "progress": 0,
+                "task": "Design layout, screen structure, and user flow.",
+                "output": "",
+            },
+            {
+                "agent": "Frontend Developer",
+                "status": "waiting",
+                "progress": 0,
+                "task": "Build Next.js page and connect frontend state.",
+                "output": "",
+            },
+            {
+                "agent": "Backend Developer",
+                "status": "waiting",
+                "progress": 0,
+                "task": "Add FastAPI routes, memory files, and validation.",
+                "output": "",
+            },
+            {
+                "agent": "QA Tester",
+                "status": "waiting",
+                "progress": 0,
+                "task": "Run build checks, backend compile, and route tests.",
+                "output": "",
+            },
+            {
+                "agent": "Project Reviewer",
+                "status": "waiting",
+                "progress": 0,
+                "task": "Review safety, privacy, rollback, and next action.",
+                "output": "",
+            },
+        ],
+    }
+
+
+@app.get("/agent-workflow/latest")
+def get_latest_agent_workflow():
+    try:
+        AGENT_WORKFLOW_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+        if not AGENT_WORKFLOW_FILE.exists():
+            workflow = default_agent_workflow()
+            AGENT_WORKFLOW_FILE.write_text(
+                json.dumps(workflow, indent=2),
+                encoding="utf-8",
+            )
+            return workflow
+
+        return json.loads(AGENT_WORKFLOW_FILE.read_text(encoding="utf-8"))
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to load agent workflow.",
+            "error": str(error),
+        }
+
+
+@app.post("/agent-workflow/start")
+def start_agent_workflow(payload: dict):
+    try:
+        user_request = payload.get("user_request", "").strip()
+
+        if not user_request:
+            user_request = "Build next safe feature."
+
+        workflow = default_agent_workflow(user_request)
+        workflow["message"] = "Agent workflow planned safely."
+
+        AGENT_WORKFLOW_FILE.parent.mkdir(parents=True, exist_ok=True)
+        AGENT_WORKFLOW_FILE.write_text(
+            json.dumps(workflow, indent=2),
+            encoding="utf-8",
+        )
+
+        return workflow
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to start agent workflow.",
+            "error": str(error),
+        }
+
+
+@app.post("/agent-workflow/reset")
+def reset_agent_workflow():
+    try:
+        workflow = default_agent_workflow()
+        workflow["message"] = "Agent workflow reset."
+
+        AGENT_WORKFLOW_FILE.parent.mkdir(parents=True, exist_ok=True)
+        AGENT_WORKFLOW_FILE.write_text(
+            json.dumps(workflow, indent=2),
+            encoding="utf-8",
+        )
+
+        return workflow
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to reset agent workflow.",
+            "error": str(error),
+        }
+
