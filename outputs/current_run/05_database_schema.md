@@ -4,337 +4,329 @@
 **1. Database Choice and Reason**
 --------------------------------
 
-* **Database:** SQLite
-* **Reason:** SQLite is a self-contained, serverless, and lightweight database that is suitable for local MVP development. It is also easy to set up and integrate with the Node.js backend.
+We will use SQLite as our database choice for the LifeTracker application. SQLite is a self-contained, file-based database that is easy to set up and maintain. It is also a good choice for a local MVP, as it does not require a separate server process.
 
 **2. Complete Schema**
 ---------------------
 
-### Users Table
+The complete schema for the LifeTracker database is as follows:
 
-| Column Name | Data Type | Description |
-| --- | --- | --- |
-| id | integer | Unique user ID |
-| name | text | User name |
-| email | text | User email |
-| password | text | User password |
+```sql
+CREATE TABLE users (
+    id INTEGER PRIMARY KEY,
+    email TEXT NOT NULL,
+    password TEXT NOT NULL,
+    name TEXT NOT NULL
+);
 
-### Health Tracking Table
+CREATE TABLE dashboards (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    metric1 REAL,
+    metric2 REAL,
+    FOREIGN KEY (user_id) REFERENCES users (id)
+);
 
-| Column Name | Data Type | Description |
-| --- | --- | --- |
-| id | integer | Unique health tracking entry ID |
-| user_id | integer | Foreign key referencing the Users table |
-| weight | real | User weight |
-| bmi | real | User BMI |
-| body_fat | real | User body fat percentage |
-| ... | ... | Other health tracking metrics |
+CREATE TABLE health_trackings (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    weight REAL,
+    height REAL,
+    FOREIGN KEY (user_id) REFERENCES users (id)
+);
 
-### Workout Tracking Table
+CREATE TABLE workout_trackings (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    exercise TEXT,
+    sets INTEGER,
+    reps INTEGER,
+    FOREIGN KEY (user_id) REFERENCES users (id)
+);
 
-| Column Name | Data Type | Description |
-| --- | --- | --- |
-| id | integer | Unique workout tracking entry ID |
-| user_id | integer | Foreign key referencing the Users table |
-| exercise | text | Exercise name |
-| sets | integer | Number of sets |
-| reps | integer | Number of reps |
-| weight | real | Weight used |
-| ... | ... | Other workout tracking metrics |
+CREATE TABLE food_and_nutritions (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    calories REAL,
+    protein REAL,
+    FOREIGN KEY (user_id) REFERENCES users (id)
+);
 
-### Food and Nutrition Table
+CREATE TABLE sleep_and_recoveries (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    sleep_duration REAL,
+    recovery_score REAL,
+    FOREIGN KEY (user_id) REFERENCES users (id)
+);
 
-| Column Name | Data Type | Description |
-| --- | --- | --- |
-| id | integer | Unique food and nutrition entry ID |
-| user_id | integer | Foreign key referencing the Users table |
-| food | text | Food name |
-| calories | real | Food calories |
-| protein | real | Food protein |
-| carbs | real | Food carbs |
-| fat | real | Food fat |
-| ... | ... | Other food and nutrition metrics |
+CREATE TABLE tasks_goals_and_roadmaps (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    task TEXT,
+    goal TEXT,
+    FOREIGN KEY (user_id) REFERENCES users (id)
+);
 
-### Sleep and Recovery Table
+CREATE TABLE books_and_knowledges (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    book TEXT,
+    author TEXT,
+    FOREIGN KEY (user_id) REFERENCES users (id)
+);
 
-| Column Name | Data Type | Description |
-| --- | --- | --- |
-| id | integer | Unique sleep and recovery entry ID |
-| user_id | integer | Foreign key referencing the Users table |
-| sleep_duration | real | Sleep duration |
-| bedtime | text | Bedtime |
-| wake_time | text | Wake time |
-| ... | ... | Other sleep and recovery metrics |
+CREATE TABLE finances (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    income REAL,
+    expenses REAL,
+    FOREIGN KEY (user_id) REFERENCES users (id)
+);
 
-### Tasks, Goals, and Roadmap Table
+CREATE TABLE reward_solo_leveling_systems (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    xp REAL,
+    level INTEGER,
+    FOREIGN KEY (user_id) REFERENCES users (id)
+);
 
-| Column Name | Data Type | Description |
-| --- | --- | --- |
-| id | integer | Unique task, goal, or roadmap entry ID |
-| user_id | integer | Foreign key referencing the Users table |
-| task | text | Task name |
-| goal | text | Goal name |
-| roadmap | text | Roadmap name |
-| ... | ... | Other task, goal, and roadmap metrics |
-
-### Books and Knowledge Table
-
-| Column Name | Data Type | Description |
-| --- | --- | --- |
-| id | integer | Unique book or knowledge entry ID |
-| user_id | integer | Foreign key referencing the Users table |
-| book | text | Book name |
-| author | text | Author name |
-| pages | integer | Number of pages |
-| ... | ... | Other book and knowledge metrics |
-
-### Finance Table
-
-| Column Name | Data Type | Description |
-| --- | --- | --- |
-| id | integer | Unique finance entry ID |
-| user_id | integer | Foreign key referencing the Users table |
-| income | real | Income |
-| expenses | real | Expenses |
-| savings | real | Savings |
-| ... | ... | Other finance metrics |
-
-### Reward/Solo Leveling System Table
-
-| Column Name | Data Type | Description |
-| --- | --- | --- |
-| id | integer | Unique reward or solo leveling system entry ID |
-| user_id | integer | Foreign key referencing the Users table |
-| reward | text | Reward name |
-| level | integer | Level |
-| xp | integer | XP |
-| ... | ... | Other reward and solo leveling system metrics |
-
-### AI Assistant Table
-
-| Column Name | Data Type | Description |
-| --- | --- | --- |
-| id | integer | Unique AI assistant entry ID |
-| user_id | integer | Foreign key referencing the Users table |
-| query | text | User query |
-| response | text | AI response |
-| ... | ... | Other AI assistant metrics |
+CREATE TABLE ai_assistants (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    query TEXT,
+    response TEXT,
+    FOREIGN KEY (user_id) REFERENCES users (id)
+);
+```
 
 **3. Table Relationships**
 -------------------------
 
-* A user can have multiple health tracking entries (one-to-many).
-* A user can have multiple workout tracking entries (one-to-many).
-* A user can have multiple food and nutrition entries (one-to-many).
-* A user can have multiple sleep and recovery entries (one-to-many).
-* A user can have multiple task, goal, and roadmap entries (one-to-many).
-* A user can have multiple book and knowledge entries (one-to-many).
-* A user can have multiple finance entries (one-to-many).
-* A user can have multiple reward and solo leveling system entries (one-to-many).
-* A user can have multiple AI assistant entries (one-to-many).
+The table relationships are as follows:
+
+* A user can have multiple dashboards, health trackings, workout trackings, food and nutritions, sleep and recoveries, tasks, goals, and roadmaps, books and knowledges, finances, reward solo leveling systems, and AI assistants.
+* A dashboard, health tracking, workout tracking, food and nutrition, sleep and recovery, task, goal, and roadmap, book and knowledge, finance, reward solo leveling system, and AI assistant is associated with one user.
 
 **4. Indexes**
---------------
+-------------
 
-* Create indexes on foreign keys to improve query performance.
-* Create indexes on columns used in WHERE and JOIN clauses.
+The indexes are as follows:
 
-**5. Sample Data**
-------------------
-
-### Users Table
-
-| id | name | email | password |
-| --- | --- | --- | --- |
-| 1 | John Doe | johndoe@example.com | password123 |
-
-### Health Tracking Table
-
-| id | user_id | weight | bmi | body_fat |
-| --- | --- | --- | --- | --- |
-| 1 | 1 | 70 | 25 | 20 |
-
-### Workout Tracking Table
-
-| id | user_id | exercise | sets | reps | weight |
-| --- | --- | --- | --- | --- | --- |
-| 1 | 1 | bench press | 3 | 10 | 100 |
-
-### Food and Nutrition Table
-
-| id | user_id | food | calories | protein | carbs | fat |
-| --- | --- | --- | --- | --- | --- | --- |
-| 1 | 1 | apple | 95 | 0.3 | 25 | 0.5 |
-
-### Sleep and Recovery Table
-
-| id | user_id | sleep_duration | bedtime | wake_time |
-| --- | --- | --- | --- | --- |
-| 1 | 1 | 8 | 22:00 | 06:00 |
-
-### Tasks, Goals, and Roadmap Table
-
-| id | user_id | task | goal | roadmap |
-| --- | --- | --- | --- | --- |
-| 1 | 1 | complete project | learn new skill | finish course |
-
-### Books and Knowledge Table
-
-| id | user_id | book | author | pages |
-| --- | --- | --- | --- | --- |
-| 1 | 1 | book title | author name | 200 |
-
-### Finance Table
-
-| id | user_id | income | expenses | savings |
-| --- | --- | --- | --- | --- |
-| 1 | 1 | 5000 | 2000 | 1000 |
-
-### Reward/Solo Leveling System Table
-
-| id | user_id | reward | level | xp |
-| --- | --- | --- | --- | --- |
-| 1 | 1 | badge | 5 | 1000 |
-
-### AI Assistant Table
-
-| id | user_id | query | response |
-| --- | --- | --- | --- |
-| 1 | 1 | what is the weather like today? | the weather is sunny today |
-
-**6. Migration SQL**
----------------------
+* Create an index on the `user_id` column in each table to improve query performance.
 
 ```sql
+CREATE INDEX idx_user_id ON dashboards (user_id);
+CREATE INDEX idx_user_id ON health_trackings (user_id);
+CREATE INDEX idx_user_id ON workout_trackings (user_id);
+CREATE INDEX idx_user_id ON food_and_nutritions (user_id);
+CREATE INDEX idx_user_id ON sleep_and_recoveries (user_id);
+CREATE INDEX idx_user_id ON tasks_goals_and_roadmaps (user_id);
+CREATE INDEX idx_user_id ON books_and_knowledges (user_id);
+CREATE INDEX idx_user_id ON finances (user_id);
+CREATE INDEX idx_user_id ON reward_solo_leveling_systems (user_id);
+CREATE INDEX idx_user_id ON ai_assistants (user_id);
+```
+
+**5. Sample Data**
+-----------------
+
+The sample data is as follows:
+
+```sql
+INSERT INTO users (email, password, name) VALUES ('user@example.com', 'password', 'User');
+INSERT INTO dashboards (user_id, metric1, metric2) VALUES (1, 10, 20);
+INSERT INTO health_trackings (user_id, weight, height) VALUES (1, 70, 170);
+INSERT INTO workout_trackings (user_id, exercise, sets, reps) VALUES (1, 'push-ups', 3, 10);
+INSERT INTO food_and_nutritions (user_id, calories, protein) VALUES (1, 2000, 100);
+INSERT INTO sleep_and_recoveries (user_id, sleep_duration, recovery_score) VALUES (1, 8, 90);
+INSERT INTO tasks_goals_and_roadmaps (user_id, task, goal) VALUES (1, 'complete project', 'learn new skill');
+INSERT INTO books_and_knowledges (user_id, book, author) VALUES (1, 'book title', 'author name');
+INSERT INTO finances (user_id, income, expenses) VALUES (1, 5000, 2000);
+INSERT INTO reward_solo_leveling_systems (user_id, xp, level) VALUES (1, 100, 5);
+INSERT INTO ai_assistants (user_id, query, response) VALUES (1, 'what is the weather like today?', 'the weather is sunny today');
+```
+
+**6. Migration SQL**
+------------------
+
+The migration SQL is as follows:
+
+```sql
+-- Create the users table
 CREATE TABLE users (
-  id INTEGER PRIMARY KEY,
-  name TEXT NOT NULL,
-  email TEXT NOT NULL,
-  password TEXT NOT NULL
+    id INTEGER PRIMARY KEY,
+    email TEXT NOT NULL,
+    password TEXT NOT NULL,
+    name TEXT NOT NULL
 );
 
-CREATE TABLE health_tracking (
-  id INTEGER PRIMARY KEY,
-  user_id INTEGER NOT NULL,
-  weight REAL NOT NULL,
-  bmi REAL NOT NULL,
-  body_fat REAL NOT NULL,
-  FOREIGN KEY (user_id) REFERENCES users (id)
+-- Create the dashboards table
+CREATE TABLE dashboards (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    metric1 REAL,
+    metric2 REAL,
+    FOREIGN KEY (user_id) REFERENCES users (id)
 );
 
-CREATE TABLE workout_tracking (
-  id INTEGER PRIMARY KEY,
-  user_id INTEGER NOT NULL,
-  exercise TEXT NOT NULL,
-  sets INTEGER NOT NULL,
-  reps INTEGER NOT NULL,
-  weight REAL NOT NULL,
-  FOREIGN KEY (user_id) REFERENCES users (id)
+-- Create the health trackings table
+CREATE TABLE health_trackings (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    weight REAL,
+    height REAL,
+    FOREIGN KEY (user_id) REFERENCES users (id)
 );
 
-CREATE TABLE food_and_nutrition (
-  id INTEGER PRIMARY KEY,
-  user_id INTEGER NOT NULL,
-  food TEXT NOT NULL,
-  calories REAL NOT NULL,
-  protein REAL NOT NULL,
-  carbs REAL NOT NULL,
-  fat REAL NOT NULL,
-  FOREIGN KEY (user_id) REFERENCES users (id)
+-- Create the workout trackings table
+CREATE TABLE workout_trackings (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    exercise TEXT,
+    sets INTEGER,
+    reps INTEGER,
+    FOREIGN KEY (user_id) REFERENCES users (id)
 );
 
-CREATE TABLE sleep_and_recovery (
-  id INTEGER PRIMARY KEY,
-  user_id INTEGER NOT NULL,
-  sleep_duration REAL NOT NULL,
-  bedtime TEXT NOT NULL,
-  wake_time TEXT NOT NULL,
-  FOREIGN KEY (user_id) REFERENCES users (id)
+-- Create the food and nutritions table
+CREATE TABLE food_and_nutritions (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    calories REAL,
+    protein REAL,
+    FOREIGN KEY (user_id) REFERENCES users (id)
 );
 
-CREATE TABLE tasks_goals_and_roadmap (
-  id INTEGER PRIMARY KEY,
-  user_id INTEGER NOT NULL,
-  task TEXT NOT NULL,
-  goal TEXT NOT NULL,
-  roadmap TEXT NOT NULL,
-  FOREIGN KEY (user_id) REFERENCES users (id)
+-- Create the sleep and recoveries table
+CREATE TABLE sleep_and_recoveries (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    sleep_duration REAL,
+    recovery_score REAL,
+    FOREIGN KEY (user_id) REFERENCES users (id)
 );
 
-CREATE TABLE books_and_knowledge (
-  id INTEGER PRIMARY KEY,
-  user_id INTEGER NOT NULL,
-  book TEXT NOT NULL,
-  author TEXT NOT NULL,
-  pages INTEGER NOT NULL,
-  FOREIGN KEY (user_id) REFERENCES users (id)
+-- Create the tasks, goals, and roadmaps table
+CREATE TABLE tasks_goals_and_roadmaps (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    task TEXT,
+    goal TEXT,
+    FOREIGN KEY (user_id) REFERENCES users (id)
 );
 
-CREATE TABLE finance (
-  id INTEGER PRIMARY KEY,
-  user_id INTEGER NOT NULL,
-  income REAL NOT NULL,
-  expenses REAL NOT NULL,
-  savings REAL NOT NULL,
-  FOREIGN KEY (user_id) REFERENCES users (id)
+-- Create the books and knowledges table
+CREATE TABLE books_and_knowledges (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    book TEXT,
+    author TEXT,
+    FOREIGN KEY (user_id) REFERENCES users (id)
 );
 
-CREATE TABLE reward_solo_leveling_system (
-  id INTEGER PRIMARY KEY,
-  user_id INTEGER NOT NULL,
-  reward TEXT NOT NULL,
-  level INTEGER NOT NULL,
-  xp INTEGER NOT NULL,
-  FOREIGN KEY (user_id) REFERENCES users (id)
+-- Create the finances table
+CREATE TABLE finances (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    income REAL,
+    expenses REAL,
+    FOREIGN KEY (user_id) REFERENCES users (id)
 );
 
-CREATE TABLE ai_assistant (
-  id INTEGER PRIMARY KEY,
-  user_id INTEGER NOT NULL,
-  query TEXT NOT NULL,
-  response TEXT NOT NULL,
-  FOREIGN KEY (user_id) REFERENCES users (id)
+-- Create the reward solo leveling systems table
+CREATE TABLE reward_solo_leveling_systems (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    xp REAL,
+    level INTEGER,
+    FOREIGN KEY (user_id) REFERENCES users (id)
+);
+
+-- Create the AI assistants table
+CREATE TABLE ai_assistants (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    query TEXT,
+    response TEXT,
+    FOREIGN KEY (user_id) REFERENCES users (id)
 );
 ```
 
 **7. 10 Common Queries**
 -------------------------
 
-1. Get all users: `SELECT * FROM users;`
-2. Get all health tracking entries for a user: `SELECT * FROM health_tracking WHERE user_id = ?;`
-3. Get all workout tracking entries for a user: `SELECT * FROM workout_tracking WHERE user_id = ?;`
-4. Get all food and nutrition entries for a user: `SELECT * FROM food_and_nutrition WHERE user_id = ?;`
-5. Get all sleep and recovery entries for a user: `SELECT * FROM sleep_and_recovery WHERE user_id = ?;`
-6. Get all tasks, goals, and roadmap entries for a user: `SELECT * FROM tasks_goals_and_roadmap WHERE user_id = ?;`
-7. Get all books and knowledge entries for a user: `SELECT * FROM books_and_knowledge WHERE user_id = ?;`
-8. Get all finance entries for a user: `SELECT * FROM finance WHERE user_id = ?;`
-9. Get all reward and solo leveling system entries for a user: `SELECT * FROM reward_solo_leveling_system WHERE user_id = ?;`
-10. Get all AI assistant entries for a user: `SELECT * FROM ai_assistant WHERE user_id = ?;`
+The 10 common queries are as follows:
+
+```sql
+-- Get all users
+SELECT * FROM users;
+
+-- Get all dashboards for a user
+SELECT * FROM dashboards WHERE user_id = 1;
+
+-- Get all health trackings for a user
+SELECT * FROM health_trackings WHERE user_id = 1;
+
+-- Get all workout trackings for a user
+SELECT * FROM workout_trackings WHERE user_id = 1;
+
+-- Get all food and nutritions for a user
+SELECT * FROM food_and_nutritions WHERE user_id = 1;
+
+-- Get all sleep and recoveries for a user
+SELECT * FROM sleep_and_recoveries WHERE user_id = 1;
+
+-- Get all tasks, goals, and roadmaps for a user
+SELECT * FROM tasks_goals_and_roadmaps WHERE user_id = 1;
+
+-- Get all books and knowledges for a user
+SELECT * FROM books_and_knowledges WHERE user_id = 1;
+
+-- Get all finances for a user
+SELECT * FROM finances WHERE user_id = 1;
+
+-- Get all reward solo leveling systems for a user
+SELECT * FROM reward_solo_leveling_systems WHERE user_id = 1;
+```
 
 **8. Data Validation Rules**
 ---------------------------
 
-* Users: name, email, and password are required.
-* Health tracking: weight, BMI, and body fat percentage are required.
-* Workout tracking: exercise, sets, reps, and weight are required.
-* Food and nutrition: food, calories, protein, carbs, and fat are required.
-* Sleep and recovery: sleep duration, bedtime, and wake time are required.
-* Tasks, goals, and roadmap: task, goal, and roadmap are required.
-* Books and knowledge: book, author, and pages are required.
-* Finance: income, expenses, and savings are required.
-* Reward and solo leveling system: reward, level, and XP are required.
-* AI assistant: query and response are required.
+The data validation rules are as follows:
+
+* Email addresses must be unique and in the format `localpart@domain`.
+* Passwords must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one digit.
+* Names must be at least 2 characters long and contain only letters and spaces.
+* Metric values must be numeric and within a valid range.
+* Weight and height values must be numeric and within a valid range.
+* Exercise names must be at least 2 characters long and contain only letters and spaces.
+* Set and rep values must be numeric and within a valid range.
+* Calorie and protein values must be numeric and within a valid range.
+* Sleep duration and recovery score values must be numeric and within a valid range.
+* Task and goal names must be at least 2 characters long and contain only letters and spaces.
+* Book and author names must be at least 2 characters long and contain only letters and spaces.
+* Income and expense values must be numeric and within a valid range.
+* XP and level values must be numeric and within a valid range.
+* Query and response values must be at least 2 characters long and contain only letters and spaces.
 
 **9. Backup and Retention Policy**
----------------------------------
+----------------------------------
 
-* Back up the database daily.
-* Retain backups for 30 days.
+The backup and retention policy is as follows:
+
+* Back up the database daily at 2am.
+* Store backups for 30 days.
+* Store backups on an external hard drive or cloud storage service.
 
 **10. Performance Notes**
 -------------------------
 
+The performance notes are as follows:
+
+* Optimize database queries to reduce execution time.
 * Use indexes to improve query performance.
-* Optimize database schema for performance.
-* Use caching to reduce database queries.
-* Monitor database performance and adjust as needed.
+* Use caching to reduce the number of database queries.
+* Monitor database performance and adjust configuration as needed.
+* Consider using a more powerful database server or distributing the database across multiple servers to improve performance.

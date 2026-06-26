@@ -1,139 +1,212 @@
-**LifeTracker Final App-Building Blueprint**
-=============================================
+**Final App Summary**
+=====================
 
-**1. Final App Summary**
--------------------------
+LifeTracker is a personal AI health and life companion app designed to help users track their health metrics, workout plans, food and nutrition, sleep and recovery, tasks, goals, and roadmap, books and knowledge, finance, and reward and solo leveling system. The app uses a local-first privacy design and stores user data locally on the device. The app also uses encryption to protect user data.
 
-LifeTracker is a personal-only app that helps users track and manage various aspects of their lives, including health, fitness, sleep, nutrition, tasks, goals, and personal growth. The app uses Next.js as the frontend framework, Supabase for normal structured data storage, Python/FastAPI as the analysis engine, and local encrypted storage for private medical reports, lab reports, body photos, private health notes, sensitive AI analysis, and local LLM memory.
+**Final MVP Feature List**
+=========================
 
-**2. Final MVP Feature List**
----------------------------
+The following are the features that will be included in the MVP:
 
-The Minimum Viable Product (MVP) will include the following features:
+1. User authentication
+2. User profile management
+3. Account deletion
+4. Password reset
+5. Email address change
+6. Password change
+7. User data storage
+8. User data retrieval
+9. User data update
+10. User data deletion
+11. User data validation
+12. User data encryption
+13. User data decryption
+14. User data integrity
+15. User data consistency
+16. Health tracking
+17. Workout tracking
+18. Food and nutrition tracking
+19. Sleep and recovery tracking
+20. Tasks, goals, and roadmap tracking
+21. Books and knowledge tracking
+22. Finance tracking
+23. Reward and solo leveling system
 
-* **Dashboard**: A personalized dashboard displaying daily scores, health metrics, and AI-powered recommendations
-* **Health Tracking**: Weight, BMI, body fat, waist, chest, arms, legs, shoulders, heart rate, HRV, steps, calories, water, mood, energy, stress, blood pressure, glucose, cholesterol, vitamins, liver markers, kidney markers, symptoms, and health notes
-* **Workout Tracking**: Daily workout plan, exercise library, sets, reps, weight, rest time, calories, strength progress, muscle group tracking, weekly split, and recovery-based workout suggestions
-* **Food and Nutrition**: Calories, protein, carbs, fats, fiber, water, vegetarian foods, eggs, milk, soya chunks, peanuts, almonds, rice, chapati, dal, curd, limited chicken if needed, food score, protein warning, calorie warning
-* **Sleep and Recovery**: Sleep duration, bedtime, wake time, REM, deep sleep, sleep quality, sleep efficiency, recovery score, and relationship with workout, mood, focus, and productivity
-* **Tasks, Goals, and Roadmap**: Daily todo, weekly goals, monthly goals, yearly goals, habit tracker, streak system, AI timetable
-* **Books and Knowledge**: Books to read, currently reading, completed books, pages, chapters, notes, key ideas, skill tracking, radar chart
-* **Finance**: Income, expenses, savings, investments, business income, stock/crypto manual tracking now, APIs later, profit/loss, monthly spending analysis
-* **Reward / Solo Leveling System**: XP, levels, badges, achievements, streaks, daily quests, weekly quests, wishlist rewards, missed habit penalty, motivation system
-* **AI Assistant**: AI-powered recommendations, insights, and suggestions for improvement
+**Final Tech Stack**
+=====================
 
-**3. Final Tech Stack**
-----------------------
+The following is the tech stack that will be used for the LifeTracker app:
 
-* **Frontend**: Next.js
-* **Backend**: Python/FastAPI
-* **Database**: Supabase
-* **Local Storage**: Encrypted storage for private medical reports, lab reports, body photos, private health notes, sensitive AI analysis, and local LLM memory
-* **AI/LLM**: Python/FastAPI with TensorFlow.js and BERT
-* **UI/UX**: Material-UI and React Router
-* **Security**: Authentication and authorization using Passport.js
-* **Testing**: Jest and Pytest for unit testing and integration testing
+1. Frontend: React, Redux, React Router, Sass
+2. Backend: Flask, SQLAlchemy, PostgreSQL
+3. Database: PostgreSQL
+4. AI/LLM: TensorFlow, NLTK
+5. Local-first privacy design: Local storage, encryption
 
-**4. Final Folder Structure**
----------------------------
+**Final Folder Structure**
+=========================
 
-* **components**: React components
-* **containers**: React containers
-* **actions**: Redux actions
-* **reducers**: Redux reducers
-* **utils**: Utility functions
-* **styles**: CSS styles
-* **images**: Image assets
-* **fonts**: Font assets
-* **pages**: Next.js pages
-* **api**: API routes
-* **database**: Database schema and migrations
-* **local-storage**: Local storage implementation
+The following is the folder structure that will be used for the LifeTracker app:
 
-**5. Frontend Build Plan**
--------------------------
+```
+life-tracker/
+public/
+index.html
+src/
+actions/
+components/
+containers/
+images/
+reducers/
+routes/
+sass/
+index.scss
+variables.scss
+mixins.scss
+components/
+index.js
+App.js
+App.test.js
+index.js
+store.js
+utils/
+index.js
+api.js
+package.json
+README.md
+```
 
-* **Create a new Next.js project**: `npx create-next-app life-tracker`
-* **Install required packages**: `npm install @material-ui/core @react-router/core`
-* **Create a new React component for the dashboard**: `npm run build`
-* **Create a new React component for each feature**: `npm run build`
-* **Create a new API route for each feature**: `npm run build`
-* **Create a new database schema and migrations**: `npm run build`
+**Frontend Build Plan**
+=====================
 
-**6. Backend Build Plan**
--------------------------
+The following is the frontend build plan for the LifeTracker app:
 
-* **Create a new Python/FastAPI project**: `pip install fastapi`
-* **Install required packages**: `pip install uvicorn`
-* **Create a new API route for each feature**: `uvicorn main:app --reload`
-* **Create a new database schema and migrations**: `uvicorn main:app --reload`
-* **Implement authentication and authorization using Passport.js**: `uvicorn main:app --reload`
+1. Set up the project structure
+2. Install the required dependencies
+3. Create the React components
+4. Create the Redux store
+5. Create the React Router routes
+6. Create the Sass styles
+7. Build the frontend
 
-**7. Supabase Database Build Plan**
------------------------------------
+**Backend Build Plan**
+=====================
 
-* **Create a new Supabase project**: `supabase init`
-* **Install required packages**: `npm install @supabase/supabase-js`
-* **Create a new database schema and migrations**: `supabase migrate`
-* **Implement database connections and queries**: `supabase connect`
+The following is the backend build plan for the LifeTracker app:
 
-**8. Local Private Storage Plan**
-----------------------------------
+1. Set up the project structure
+2. Install the required dependencies
+3. Create the Flask API
+4. Create the SQLAlchemy models
+5. Create the PostgreSQL database
+6. Build the backend
 
-* **Create a new local storage implementation**: `npm install @localforage/localforage`
-* **Implement encryption and decryption for sensitive data**: `npm install crypto`
-* **Store private medical reports, lab reports, body photos, private health notes, sensitive AI analysis, and local LLM memory**: `npm run build`
+**Supabase Database Build Plan**
+=============================
 
-**9. Python/FastAPI AI Analysis Engine Plan**
---------------------------------------------
+The following is the Supabase database build plan for the LifeTracker app:
 
-* **Create a new Python/FastAPI project**: `pip install fastapi`
-* **Install required packages**: `pip install tensorflowjs bert`
-* **Create a new AI analysis engine**: `pip install tensorflowjs bert`
-* **Implement AI-powered recommendations and insights**: `pip install tensorflowjs bert`
+1. Set up the Supabase project
+2. Create the tables
+3. Create the relationships between tables
+4. Populate the tables with data
 
-**10. Testing Plan**
--------------------
+**Local Private Storage Plan**
+=============================
 
-* **Create a new Jest test suite for each feature**: `npm test`
-* **Create a new Pytest test suite for each feature**: `pytest`
-* **Implement unit testing and integration testing**: `npm test`
-* **Implement API testing**: `pytest`
+The following is the local private storage plan for the LifeTracker app:
 
-**11. Step-by-step Development Roadmap**
------------------------------------------
+1. Use local storage to store user data
+2. Use encryption to protect user data
 
-* **Week 1-2**: Create a new Next.js project, install required packages, and create a new React component for the dashboard
-* **Week 3-4**: Create a new React component for each feature, create a new API route for each feature, and implement authentication and authorization using Passport.js
-* **Week 5-6**: Create a new database schema and migrations, implement database connections and queries, and store private medical reports, lab reports, body photos, private health notes, sensitive AI analysis, and local LLM memory
-* **Week 7-8**: Implement AI-powered recommendations and insights using Python/FastAPI with TensorFlow.js and BERT
-* **Week 9-10**: Implement unit testing and integration testing using Jest and Pytest, and API testing using Pytest
+**Python/FastAPI AI Analysis Engine Plan**
+=====================================
 
-**12. What to Build First**
--------------------------
+The following is the Python/FastAPI AI analysis engine plan for the LifeTracker app:
 
-* **Build the dashboard component**: `npm run build`
-* **Build the health tracking component**: `npm run build`
-* **Build the workout tracking component**: `npm run build`
-* **Build the food and nutrition component**: `npm run build`
-* **Build the sleep and recovery component**: `npm run build`
-* **Build the tasks, goals, and roadmap component**: `npm run build`
-* **Build the books and knowledge component**: `npm run build`
-* **Build the finance component**: `npm run build`
-* **Build the reward / solo leveling system component**: `npm run build`
-* **Build the AI assistant component**: `npm run build`
+1. Use TensorFlow to build the AI model
+2. Use NLTK to process text data
+3. Use FastAPI to create the API
 
-**13. Risks and Fixes**
-----------------------
+**Testing Plan**
+================
 
-* **Risk 1**: Insufficient testing and debugging
-* **Fix 1**: Implement thorough testing and debugging using Jest and Pytest
-* **Risk 2**: Inadequate security measures
-* **Fix 2**: Implement authentication and authorization using Passport.js and implement encryption and decryption for sensitive data
-* **Risk 3**: Inefficient database schema and migrations
-* **Fix 3**: Optimize database schema and migrations for better performance
+The following is the testing plan for the LifeTracker app:
 
-**14. Final Recommendation**
----------------------------
+1. Unit testing
+2. Integration testing
+3. End-to-end testing
+4. Security testing
 
-LifeTracker is a comprehensive app that helps users track and manage various aspects of their lives. The app uses Next.js as the frontend framework, Python/FastAPI as the backend framework, Supabase for normal structured data storage, and local encrypted storage for private medical reports, lab reports, body photos, private health notes, sensitive AI analysis, and local LLM memory. The app includes features such as health tracking, workout tracking, food and nutrition, sleep and recovery, tasks, goals, and roadmap, books and knowledge, finance, reward / solo leveling system, and AI assistant. The app is built using a modular architecture with separate components for each feature, and is tested thoroughly using Jest and Pytest. The app is secure and efficient, with adequate measures in place to prevent data breaches and ensure optimal performance.
+**Step-by-step Development Roadmap**
+==================================
+
+The following is the step-by-step development roadmap for the LifeTracker app:
+
+1. Set up the project structure
+2. Install the required dependencies
+3. Create the React components
+4. Create the Redux store
+5. Create the React Router routes
+6. Create the Sass styles
+7. Build the frontend
+8. Set up the Flask API
+9. Create the SQLAlchemy models
+10. Create the PostgreSQL database
+11. Build the backend
+12. Set up the Supabase project
+13. Create the tables
+14. Create the relationships between tables
+15. Populate the tables with data
+16. Use local storage to store user data
+17. Use encryption to protect user data
+18. Use TensorFlow to build the AI model
+19. Use NLTK to process text data
+20. Use FastAPI to create the API
+
+**What to Build First**
+=====================
+
+The following is what to build first for the LifeTracker app:
+
+1. Set up the project structure
+2. Install the required dependencies
+3. Create the React components
+4. Create the Redux store
+5. Create the React Router routes
+6. Create the Sass styles
+7. Build the frontend
+
+**Risks and Fixes**
+==================
+
+The following are the risks and fixes for the LifeTracker app:
+
+1. Risk: User data is not secure
+Fix: Use encryption to protect user data
+2. Risk: User data is not consistent
+Fix: Use consistency checks to ensure user data is consistent
+3. Risk: User data is not integrity-checked
+Fix: Use integrity checks to ensure user data is integrity-checked
+4. Risk: AI model is not accurate
+Fix: Use TensorFlow to build an accurate AI model
+5. Risk: NLTK is not effective
+Fix: Use NLTK to process text data effectively
+
+**Final Recommendation**
+=====================
+
+The following is the final recommendation for the LifeTracker app:
+
+1. Use a local-first privacy design to store user data locally on the device
+2. Use encryption to protect user data
+3. Use TensorFlow to build an accurate AI model
+4. Use NLTK to process text data effectively
+5. Use FastAPI to create the API
+6. Use Supabase to create the database
+7. Use PostgreSQL to create the database
+8. Use Flask to create the backend
+9. Use React to create the frontend
+10. Use Redux to manage the application state
+11. Use React Router to manage client-side routing
+12. Use Sass to write CSS code

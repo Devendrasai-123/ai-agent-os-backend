@@ -1,17 +1,21 @@
 import os
 import base64
+import json
 import mimetypes
 from pathlib import Path
 import sqlite3
 import subprocess
 import sys
 import threading
+import shutil
+import difflib
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from openai import OpenAI
+from datetime import datetime
 from pydantic import BaseModel
 from pypdf import PdfReader
 
@@ -36,6 +40,7 @@ UI_STYLE_MEMORY = CREWAI_DIR / "memory" / "ui_style_memory.md"
 FEATURE_MEMORY = CREWAI_DIR / "memory" / "feature_memory.md"
 PROJECT_RULES_MEMORY = CREWAI_DIR / "memory" / "project_rules.md"
 PAGE_PLAN_MEMORY = CREWAI_DIR / "memory" / "page_plan_memory.md"
+FEATURE_REGISTRY_FILE = CREWAI_DIR / "memory" / "feature_registry.json"
 
 CHAT_UPLOADS_DIR = CREWAI_DIR / "uploads" / "chat"
 DOCUMENTS_UPLOADS_DIR = CREWAI_DIR / "uploads" / "documents"
@@ -1548,6 +1553,12 @@ MEMORY:
         }
 
     except Exception as error:
+        record_error(
+            "Agent Team",
+            "agents_decide",
+            "Agent team decision failed.",
+            str(error),
+        )
         return {
             "ok": False,
             "message": "Page generation error.",
@@ -1555,7 +1566,7 @@ MEMORY:
         }
     
 
-    
+
 def safe_route_to_page_file(route_path: str):
     cleaned = route_path.strip()
 
@@ -1852,4 +1863,1434 @@ def delete_chat_session(session_id: int):
         "ok": True,
         "message": "Chat deleted successfully.",
         "session_id": session_id,
+    }
+
+
+
+
+class FeatureCreateRequest(BaseModel):
+    name: str
+    description: str = ""
+    status: str = "planned"
+    priority: str = "medium"
+    owner_agent: str = "Product Manager"
+    frontend_file: str = ""
+    backend_route: str = ""
+    database_needed: bool = False
+    notes: str = ""
+
+
+class FeatureUpdateRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    status: str | None = None
+    priority: str | None = None
+    owner_agent: str | None = None
+    frontend_file: str | None = None
+    backend_route: str | None = None
+    database_needed: bool | None = None
+    notes: str | None = None
+
+
+def load_feature_registry():
+    FEATURE_REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+    if not FEATURE_REGISTRY_FILE.exists():
+        default_features = [
+            {
+                "id": "feature_chat",
+                "name": "Chat Page",
+                "description": "Main AI chat page for user-agent conversation.",
+                "status": "done",
+                "priority": "high",
+                "owner_agent": "Frontend Developer",
+                "frontend_file": "app/chat/page.tsx",
+                "backend_route": "/chat/send",
+                "database_needed": True,
+                "notes": "Basic chat route exists. Needs deeper agent memory later.",
+            },
+            {
+                "id": "feature_ui_references",
+                "name": "UI References",
+                "description": "Upload, view, delete, and analyze UI reference images.",
+                "status": "building",
+                "priority": "high",
+                "owner_agent": "UI/UX Designer",
+                "frontend_file": "app/ui-references/page.tsx",
+                "backend_route": "/ui/upload-reference",
+                "database_needed": False,
+                "notes": "Image upload is available. Delete/analyze needs full UI connection check.",
+            },
+            {
+                "id": "feature_page_builder",
+                "name": "Page Builder",
+                "description": "Generate and install Next.js pages from prompts.",
+                "status": "building",
+                "priority": "high",
+                "owner_agent": "Frontend Developer",
+                "frontend_file": "app/page-builder/page.tsx",
+                "backend_route": "/builder/generate-page",
+                "database_needed": False,
+                "notes": "Generator safety improved with validation and END_OF_FILE marker.",
+            },
+            {
+                "id": "feature_github_backup",
+                "name": "GitHub Backup",
+                "description": "Frontend and backend backed up to private GitHub repos.",
+                "status": "done",
+                "priority": "high",
+                "owner_agent": "Project Reviewer",
+                "frontend_file": "",
+                "backend_route": "",
+                "database_needed": False,
+                "notes": "Frontend and backend pushed successfully.",
+            },
+        ]
+
+        FEATURE_REGISTRY_FILE.write_text(
+            json.dumps(default_features, indent=2),
+            encoding="utf-8",
+        )
+
+    try:
+        return json.loads(FEATURE_REGISTRY_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def save_feature_registry(features):
+    FEATURE_REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    FEATURE_REGISTRY_FILE.write_text(
+        json.dumps(features, indent=2),
+        encoding="utf-8",
+    )
+
+
+@app.get("/features")
+def get_features():
+    features = load_feature_registry()
+
+    total = len(features)
+    done = len([f for f in features if f.get("status") == "done"])
+    building = len([f for f in features if f.get("status") == "building"])
+    planned = len([f for f in features if f.get("status") == "planned"])
+    error = len([f for f in features if f.get("status") == "error"])
+
+    return {
+        "ok": True,
+        "total": total,
+        "summary": {
+            "done": done,
+            "building": building,
+            "planned": planned,
+            "error": error,
+        },
+        "features": features,
+    }
+
+
+@app.post("/features")
+def create_feature(request: FeatureCreateRequest):
+    features = load_feature_registry()
+
+    feature_id = "feature_" + "".join(
+        char.lower() if char.isalnum() else "_"
+        for char in request.name
+    ).strip("_")
+
+    existing_ids = {feature.get("id") for feature in features}
+
+    if feature_id in existing_ids:
+        feature_id = f"{feature_id}_{len(features) + 1}"
+
+    new_feature = {
+        "id": feature_id,
+        "name": request.name,
+        "description": request.description,
+        "status": request.status,
+        "priority": request.priority,
+        "owner_agent": request.owner_agent,
+        "frontend_file": request.frontend_file,
+        "backend_route": request.backend_route,
+        "database_needed": request.database_needed,
+        "notes": request.notes,
+    }
+
+    features.append(new_feature)
+    save_feature_registry(features)
+
+    return {
+        "ok": True,
+        "message": "Feature created successfully.",
+        "feature": new_feature,
+    }
+
+
+@app.put("/features/{feature_id}")
+def update_feature(feature_id: str, request: FeatureUpdateRequest):
+    features = load_feature_registry()
+
+    for feature in features:
+        if feature.get("id") == feature_id:
+            update_data = request.model_dump(exclude_none=True)
+            feature.update(update_data)
+            save_feature_registry(features)
+
+            return {
+                "ok": True,
+                "message": "Feature updated successfully.",
+                "feature": feature,
+            }
+
+    return {
+        "ok": False,
+        "message": "Feature not found.",
+        "feature_id": feature_id,
+    }
+
+
+@app.delete("/features/{feature_id}")
+def delete_feature(feature_id: str):
+    features = load_feature_registry()
+    new_features = [feature for feature in features if feature.get("id") != feature_id]
+
+    if len(new_features) == len(features):
+        return {
+            "ok": False,
+            "message": "Feature not found.",
+            "feature_id": feature_id,
+        }
+
+    save_feature_registry(new_features)
+
+    return {
+        "ok": True,
+        "message": "Feature deleted successfully.",
+        "feature_id": feature_id,
+    }
+
+class AgentBriefRequest(BaseModel):
+    app_name: str = ""
+    app_idea: str
+    main_features: str = ""
+    ui_style: str = ""
+    backend_needs: str = ""
+    private_rules: str = ""
+    agent_questions: str = ""
+    save_to_long_memory: bool = True
+    save_to_short_memory: bool = True
+    add_to_feature_registry: bool = True
+
+
+def append_text_file(file_path: Path, text: str):
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    existing = ""
+    if file_path.exists():
+        existing = file_path.read_text(encoding="utf-8")
+
+    updated = existing.rstrip() + "\n\n" + text.strip() + "\n"
+    file_path.write_text(updated, encoding="utf-8")
+
+
+def extract_feature_names(features_text: str):
+    names = []
+
+    for raw_line in features_text.splitlines():
+        line = raw_line.strip()
+
+        if not line:
+            continue
+
+        line = line.lstrip("-").lstrip("*").strip()
+
+        if "." in line[:4]:
+            line = line.split(".", 1)[1].strip()
+
+        if line:
+            names.append(line[:120])
+
+    return names
+
+
+@app.post("/agent-brief/save")
+def save_agent_brief(request: AgentBriefRequest):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    app_name = request.app_name.strip() or "Untitled App"
+
+    brief_markdown = f"""
+# Agent Brief: {app_name}
+
+_Updated: {timestamp}_
+
+## App Idea
+{request.app_idea.strip()}
+
+## Main Features
+{request.main_features.strip() or "Not provided yet."}
+
+## UI Style
+{request.ui_style.strip() or "Not provided yet."}
+
+## Backend / Database Needs
+{request.backend_needs.strip() or "Not provided yet."}
+
+## Private Rules
+{request.private_rules.strip() or "Not provided yet."}
+
+## Questions Agents Must Ask Before Work
+{request.agent_questions.strip() or "Not provided yet."}
+""".strip()
+
+    saved_targets = []
+
+    if request.save_to_long_memory:
+      long_memory_text = ""
+      if LONG_TERM_MEMORY.exists():
+        long_memory_text = LONG_TERM_MEMORY.read_text(encoding="utf-8")
+
+    start_marker = "<!-- AGENT_BRIEF_START -->"
+    end_marker = "<!-- AGENT_BRIEF_END -->"
+
+    clean_brief = f"""
+{start_marker}
+
+{brief_markdown}
+
+{end_marker}
+""".strip()
+
+    if start_marker in long_memory_text and end_marker in long_memory_text:
+        before = long_memory_text.split(start_marker, 1)[0].rstrip()
+        after = long_memory_text.split(end_marker, 1)[1].lstrip()
+        long_memory_text = before + "\n\n" + clean_brief + "\n\n" + after
+    else:
+        long_memory_text = long_memory_text.rstrip() + "\n\n" + clean_brief + "\n"
+
+    LONG_TERM_MEMORY.write_text(long_memory_text, encoding="utf-8")
+    saved_targets.append("long_memory")
+
+
+    if request.save_to_short_memory:
+        append_text_file(
+            SHORT_TERM_MEMORY,
+            f"""
+# Current Agent Brief
+
+_Updated: {timestamp}_
+
+Current app/project focus: {app_name}
+
+{request.app_idea.strip()}
+""".strip(),
+        )
+        saved_targets.append("short_memory")
+
+    created_features = []
+
+    if request.add_to_feature_registry and request.main_features.strip():
+        features = load_feature_registry()
+        existing_names = {feature.get("name", "").lower() for feature in features}
+
+        for feature_name in extract_feature_names(request.main_features):
+            if feature_name.lower() in existing_names:
+                continue
+
+            feature_id = "feature_" + "".join(
+                char.lower() if char.isalnum() else "_"
+                for char in feature_name
+            ).strip("_")
+
+            new_feature = {
+                "id": feature_id,
+                "name": feature_name,
+                "description": f"Feature from Agent Brief: {app_name}",
+                "status": "planned",
+                "priority": "medium",
+                "owner_agent": "Product Manager",
+                "frontend_file": "",
+                "backend_route": "",
+                "database_needed": False,
+                "notes": "Created automatically from Agent Brief.",
+            }
+
+            features.append(new_feature)
+            created_features.append(new_feature)
+            existing_names.add(feature_name.lower())
+
+        save_feature_registry(features)
+        saved_targets.append("feature_registry")
+
+    return {
+        "ok": True,
+        "message": "Agent brief saved successfully.",
+        "app_name": app_name,
+        "saved_targets": saved_targets,
+        "created_features": created_features,
+        "created_feature_count": len(created_features),
+    }
+
+class AgentDecisionRequest(BaseModel):
+    goal: str
+    context: str = ""
+    model: str = "z-ai/glm-5.1"
+    save_to_memory: bool = True
+
+
+@app.post("/agents/decide")
+def agents_decide(request: AgentDecisionRequest):
+    try:
+        update_agent_status(
+            True,
+            "Product Manager",
+            "Reading Project Brain and preparing agent team decision.",
+            10,
+            "Agent team decision started.",
+        )
+
+        nvidia_api_key = os.getenv("NVIDIA_API_KEY")
+
+
+        if not nvidia_api_key:
+            return {
+                "ok": False,
+                "message": "NVIDIA_API_KEY is missing in .env.",
+            }
+
+        memory_context = build_full_agent_context()
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        client = OpenAI(
+            base_url="https://integrate.api.nvidia.com/v1",
+            api_key=nvidia_api_key,
+        )
+
+        prompt = f"""
+You are Devendra's AI Agent Team.
+
+Agents:
+1. Product Manager
+2. UI/UX Designer
+3. Frontend Developer
+4. Backend Developer
+5. QA Tester
+6. Project Reviewer
+
+User Goal:
+{request.goal}
+
+Extra Context:
+{request.context}
+
+Project Memory:
+{memory_context}
+
+Rules:
+- Treat PROJECT BRAIN as the main source of truth.
+- Do not ignore user rules, privacy rules, or UI design rules.
+- Be practical.
+- Ask questions before database/API/local model/deployment/private-data decisions.
+- Split work by agent.
+- Identify missing information.
+- Create a step-by-step build plan.
+- Mark risks.
+- Mention which features should go into Feature Registry.
+- Mention which files/pages/routes may need changes.
+- Do not overwrite files without approval.
+- Do not write code unless specifically asked.
+- Keep output clear and structured.
+
+
+Return this format:
+
+# Agent Team Decision
+
+## Summary
+
+## Questions Before Work
+
+## Agent Assignments
+### Product Manager
+### UI/UX Designer
+### Frontend Developer
+### Backend Developer
+### QA Tester
+### Project Reviewer
+
+## Feature Registry Items
+
+## Risks
+
+## Next 5 Actions
+""".strip()
+        
+        update_agent_status(
+            True,
+            "Project Reviewer",
+            "Calling AI model and creating final agent decision report.",
+            65,
+            "Project Brain loaded.",
+        )
+
+        completion = client.chat.completions.create(
+            model=request.model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a multi-agent software planning team for a private local AI Agent OS.",
+                },
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
+            ],
+            temperature=0.2,
+            max_tokens=5000,
+        )
+
+        decision = completion.choices[0].message.content or ""
+
+        GENERATED_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+        safe_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+        report_file = GENERATED_REPORTS_DIR / f"agent_decision_{safe_time}.md"
+
+        report_text = f"""
+# Agent Team Decision Report
+
+_Updated: {timestamp}_
+
+## Goal
+{request.goal}
+
+## Context
+{request.context or "No extra context provided."}
+
+---
+
+{decision}
+""".strip()
+
+        report_file.write_text(report_text, encoding="utf-8")
+
+        if request.save_to_memory:
+            append_text_file(
+                PAGE_PLAN_MEMORY,
+                f"""
+# Agent Team Decision
+
+_Updated: {timestamp}_
+
+Goal: {request.goal}
+
+{decision}
+""".strip(),
+            )
+        update_agent_status(
+            False,
+            "Project Reviewer",
+            "Agent decision completed.",
+            100,
+            "Agent team decision created successfully.",
+        )
+        return {
+            "ok": True,
+            "message": "Agent team decision created.",
+            "goal": request.goal,
+            "model": request.model,
+            "report_file": str(report_file),
+            "decision": decision,
+        }
+
+    except Exception as error:
+        update_agent_status(
+            False,
+            "Project Reviewer",
+            "Agent decision failed.",
+            100,
+            "Agent team decision failed.",
+            str(error),
+        )
+        return {
+            "ok": False,
+            "message": "Agent team decision failed.",
+            "error": str(error),
+        }
+    
+PROJECT_BRAIN_MEMORY = CREWAI_DIR / "memory" / "project_brain.md"
+
+
+class ProjectBrainRequest(BaseModel):
+    app_mission: str = ""
+    user_rules: str = ""
+    agent_rules: str = ""
+    privacy_rules: str = ""
+    ui_design_rules: str = ""
+    current_tech_stack: str = ""
+    current_pages: str = ""
+    current_backend_routes: str = ""
+    feature_roadmap: str = ""
+    completed_work: str = ""
+    blocked_work: str = ""
+    next_actions: str = ""
+    save_to_long_memory: bool = True
+
+
+def build_project_brain_markdown(request: ProjectBrainRequest):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    return f"""
+# Project Brain Memory
+
+_Updated: {timestamp}_
+
+## App Mission
+{request.app_mission.strip() or "Not provided yet."}
+
+## User Rules
+{request.user_rules.strip() or "Not provided yet."}
+
+## Agent Rules
+{request.agent_rules.strip() or "Not provided yet."}
+
+## Privacy Rules
+{request.privacy_rules.strip() or "Not provided yet."}
+
+## UI Design Rules
+{request.ui_design_rules.strip() or "Not provided yet."}
+
+## Current Tech Stack
+{request.current_tech_stack.strip() or "Not provided yet."}
+
+## Current Pages
+{request.current_pages.strip() or "Not provided yet."}
+
+## Current Backend Routes
+{request.current_backend_routes.strip() or "Not provided yet."}
+
+## Feature Roadmap
+{request.feature_roadmap.strip() or "Not provided yet."}
+
+## Completed Work
+{request.completed_work.strip() or "Not provided yet."}
+
+## Blocked Work
+{request.blocked_work.strip() or "Not provided yet."}
+
+## Next Actions
+{request.next_actions.strip() or "Not provided yet."}
+""".strip()
+
+
+def upsert_project_brain_into_long_memory(project_brain_text: str):
+    LONG_TERM_MEMORY.parent.mkdir(parents=True, exist_ok=True)
+
+    long_memory_text = ""
+    if LONG_TERM_MEMORY.exists():
+        long_memory_text = LONG_TERM_MEMORY.read_text(encoding="utf-8")
+
+    start_marker = "<!-- PROJECT_BRAIN_START -->"
+    end_marker = "<!-- PROJECT_BRAIN_END -->"
+
+    clean_block = f"""
+{start_marker}
+
+{project_brain_text}
+
+{end_marker}
+""".strip()
+
+    if start_marker in long_memory_text and end_marker in long_memory_text:
+        before = long_memory_text.split(start_marker, 1)[0].rstrip()
+        after = long_memory_text.split(end_marker, 1)[1].lstrip()
+        updated = before + "\n\n" + clean_block + "\n\n" + after
+    else:
+        updated = long_memory_text.rstrip() + "\n\n" + clean_block + "\n"
+
+    LONG_TERM_MEMORY.write_text(updated.strip() + "\n", encoding="utf-8")
+
+
+@app.get("/project-brain")
+def get_project_brain():
+    PROJECT_BRAIN_MEMORY.parent.mkdir(parents=True, exist_ok=True)
+
+    if not PROJECT_BRAIN_MEMORY.exists():
+        return {
+            "ok": True,
+            "exists": False,
+            "content": "",
+            "message": "Project Brain not created yet.",
+        }
+
+    return {
+        "ok": True,
+        "exists": True,
+        "content": PROJECT_BRAIN_MEMORY.read_text(encoding="utf-8"),
+        "file": str(PROJECT_BRAIN_MEMORY),
+    }
+
+
+@app.post("/project-brain")
+def save_project_brain(request: ProjectBrainRequest):
+    PROJECT_BRAIN_MEMORY.parent.mkdir(parents=True, exist_ok=True)
+
+    project_brain_text = build_project_brain_markdown(request)
+    PROJECT_BRAIN_MEMORY.write_text(project_brain_text + "\n", encoding="utf-8")
+
+    saved_targets = ["project_brain"]
+
+    if request.save_to_long_memory:
+        upsert_project_brain_into_long_memory(project_brain_text)
+        saved_targets.append("long_memory")
+
+    return {
+        "ok": True,
+        "message": "Project Brain saved successfully.",
+        "saved_targets": saved_targets,
+        "file": str(PROJECT_BRAIN_MEMORY),
+        "content": project_brain_text,
+    }
+
+
+def read_memory_file_for_context(file_path: Path, title: str, max_chars: int = 12000):
+    try:
+        if not file_path.exists():
+            return f"\n\n# {title}\nNot created yet."
+
+        content = file_path.read_text(encoding="utf-8").strip()
+
+        if not content:
+            return f"\n\n# {title}\nEmpty."
+
+        if len(content) > max_chars:
+            content = content[-max_chars:]
+
+        return f"\n\n# {title}\n{content}"
+
+    except Exception as error:
+        return f"\n\n# {title}\nCould not read memory file: {error}"
+
+
+def build_full_agent_context():
+    project_brain_file = CREWAI_DIR / "memory" / "project_brain.md"
+
+    context = ""
+
+    context += read_memory_file_for_context(
+        project_brain_file,
+        "PROJECT BRAIN - MAIN SOURCE OF TRUTH",
+        18000,
+    )
+
+    context += read_memory_file_for_context(
+        LONG_TERM_MEMORY,
+        "LONG TERM MEMORY - PERMANENT RULES",
+        12000,
+    )
+
+    context += read_memory_file_for_context(
+        SHORT_TERM_MEMORY,
+        "SHORT TERM MEMORY - CURRENT WORK",
+        8000,
+    )
+
+    context += read_memory_file_for_context(
+        UI_STYLE_MEMORY,
+        "UI STYLE MEMORY",
+        8000,
+    )
+
+    context += read_memory_file_for_context(
+        PAGE_PLAN_MEMORY,
+        "PAGE PLAN MEMORY",
+        8000,
+    )
+
+    context += read_memory_file_for_context(
+        FEATURE_MEMORY,
+        "FEATURE MEMORY",
+        8000,
+    )
+
+    try:
+        if FEATURE_REGISTRY_FILE.exists():
+            feature_registry_text = FEATURE_REGISTRY_FILE.read_text(encoding="utf-8")
+            if len(feature_registry_text) > 12000:
+                feature_registry_text = feature_registry_text[-12000:]
+            context += f"\n\n# FEATURE REGISTRY JSON\n{feature_registry_text}"
+        else:
+            context += "\n\n# FEATURE REGISTRY JSON\nNot created yet."
+    except Exception as error:
+        context += f"\n\n# FEATURE REGISTRY JSON\nCould not read feature registry: {error}"
+
+    return context.strip()
+
+@app.get("/decision-reports")
+def list_decision_reports():
+    try:
+        GENERATED_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+        reports = []
+
+        for report_file in sorted(
+            GENERATED_REPORTS_DIR.glob("agent_decision_*.md"),
+            key=lambda file: file.stat().st_mtime,
+            reverse=True,
+        ):
+            content = report_file.read_text(encoding="utf-8")
+            modified_time = datetime.fromtimestamp(report_file.stat().st_mtime)
+
+            title = "Agent Decision Report"
+            for line in content.splitlines():
+                if line.strip().startswith("# "):
+                    title = line.replace("#", "").strip()
+                    break
+
+            reports.append(
+                {
+                    "file_name": report_file.name,
+                    "title": title,
+                    "modified": modified_time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "size": report_file.stat().st_size,
+                    "preview": content[:500],
+                }
+            )
+
+        return {
+            "ok": True,
+            "count": len(reports),
+            "reports": reports,
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to list decision reports.",
+            "error": str(error),
+        }
+
+
+@app.get("/decision-reports/{file_name}")
+def read_decision_report(file_name: str):
+    try:
+        if ".." in file_name or "/" in file_name or "\\" in file_name:
+            return {
+                "ok": False,
+                "message": "Invalid file name.",
+            }
+
+        report_file = GENERATED_REPORTS_DIR / file_name
+
+        if not report_file.exists():
+            return {
+                "ok": False,
+                "message": "Decision report not found.",
+            }
+
+        return {
+            "ok": True,
+            "file_name": report_file.name,
+            "content": report_file.read_text(encoding="utf-8"),
+            "modified": datetime.fromtimestamp(report_file.stat().st_mtime).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            ),
+            "size": report_file.stat().st_size,
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to read decision report.",
+            "error": str(error),
+        }
+    
+
+AGENT_STATUS_FILE = CREWAI_DIR / "memory" / "agent_status.json"
+
+
+def default_agent_status():
+    return {
+        "ok": True,
+        "is_running": False,
+        "current_agent": "Idle",
+        "current_task": "No active task.",
+        "progress": 0,
+        "last_result": "No run yet.",
+        "error": "",
+        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "agents": [
+            {"name": "Product Manager", "status": "idle", "task": ""},
+            {"name": "UI/UX Designer", "status": "idle", "task": ""},
+            {"name": "Frontend Developer", "status": "idle", "task": ""},
+            {"name": "Backend Developer", "status": "idle", "task": ""},
+            {"name": "QA Tester", "status": "idle", "task": ""},
+            {"name": "Project Reviewer", "status": "idle", "task": ""},
+        ],
+    }
+
+
+def load_agent_status():
+    try:
+        AGENT_STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+        if not AGENT_STATUS_FILE.exists():
+            status = default_agent_status()
+            AGENT_STATUS_FILE.write_text(json.dumps(status, indent=2), encoding="utf-8")
+            return status
+
+        return json.loads(AGENT_STATUS_FILE.read_text(encoding="utf-8"))
+
+    except Exception as error:
+        status = default_agent_status()
+        status["ok"] = False
+        status["error"] = str(error)
+        return status
+
+
+def save_agent_status(status: dict):
+    AGENT_STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    status["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    AGENT_STATUS_FILE.write_text(json.dumps(status, indent=2), encoding="utf-8")
+    return status
+
+
+def update_agent_status(
+    is_running: bool,
+    current_agent: str,
+    current_task: str,
+    progress: int,
+    last_result: str = "",
+    error: str = "",
+):
+    status = load_agent_status()
+    status["ok"] = True
+    status["is_running"] = is_running
+    status["current_agent"] = current_agent
+    status["current_task"] = current_task
+    status["progress"] = max(0, min(100, progress))
+    status["last_result"] = last_result or status.get("last_result", "")
+    status["error"] = error
+
+    for agent in status.get("agents", []):
+        if agent["name"] == current_agent:
+            agent["status"] = "running" if is_running else "done"
+            agent["task"] = current_task
+        elif is_running:
+            agent["status"] = "waiting"
+        else:
+            agent["status"] = "idle"
+
+    return save_agent_status(status)
+
+
+@app.get("/agents/live-status")
+def get_agents_live_status():
+    return load_agent_status()
+
+
+@app.post("/agents/live-status/reset")
+def reset_agents_live_status():
+    status = default_agent_status()
+    save_agent_status(status)
+    return status
+
+
+SAFE_INSTALL_BACKUPS_DIR = CREWAI_DIR / "backups" / "page_installs"
+
+
+class SafeInstallPreviewRequest(BaseModel):
+    generated_file_name: str
+    target_route: str
+
+
+class SafeInstallRequest(BaseModel):
+    generated_file_name: str
+    target_route: str
+
+
+class SafeRollbackRequest(BaseModel):
+    backup_file_name: str
+
+
+def safe_file_name_only(file_name: str):
+    if ".." in file_name or "/" in file_name or "\\" in file_name:
+        raise ValueError("Invalid file name.")
+    return file_name
+
+
+def route_to_page_file(target_route: str):
+    route = target_route.strip()
+
+    if not route.startswith("/"):
+        route = "/" + route
+
+    route = route.strip("/")
+
+    if not route:
+        return FRONTEND_APP_DIR / "page.tsx"
+
+    parts = [part for part in route.split("/") if part.strip()]
+
+    for part in parts:
+        if part in ["..", ".", ""]:
+            raise ValueError("Invalid route.")
+
+    return FRONTEND_APP_DIR.joinpath(*parts) / "page.tsx"
+
+
+def get_generated_page_file(generated_file_name: str):
+    clean_name = safe_file_name_only(generated_file_name)
+    generated_file = GENERATED_PAGES_DIR / clean_name
+
+    if not generated_file.exists():
+        raise FileNotFoundError("Generated page file not found.")
+
+    return generated_file
+
+
+def create_page_backup(target_file: Path):
+    SAFE_INSTALL_BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    route_hint = str(target_file.relative_to(FRONTEND_APP_DIR)).replace("\\", "__").replace("/", "__")
+    backup_name = f"backup_{timestamp}__{route_hint}"
+
+    backup_file = SAFE_INSTALL_BACKUPS_DIR / backup_name
+
+    if target_file.exists():
+        shutil.copy2(target_file, backup_file)
+        existed = True
+    else:
+        backup_file.write_text("__FILE_DID_NOT_EXIST_BEFORE_INSTALL__", encoding="utf-8")
+        existed = False
+
+    return backup_file, existed
+
+
+@app.post("/safe-install/preview")
+def safe_install_preview(request: SafeInstallPreviewRequest):
+    try:
+        generated_file = get_generated_page_file(request.generated_file_name)
+        target_file = route_to_page_file(request.target_route)
+
+        new_content = generated_file.read_text(encoding="utf-8")
+        old_content = ""
+
+        if target_file.exists():
+            old_content = target_file.read_text(encoding="utf-8")
+
+        diff_lines = list(
+            difflib.unified_diff(
+                old_content.splitlines(),
+                new_content.splitlines(),
+                fromfile="current_page",
+                tofile="generated_page",
+                lineterm="",
+            )
+        )
+
+        return {
+            "ok": True,
+            "generated_file": str(generated_file),
+            "target_file": str(target_file),
+            "target_exists": target_file.exists(),
+            "old_content": old_content,
+            "new_content": new_content,
+            "diff": "\n".join(diff_lines[:1200]),
+            "diff_line_count": len(diff_lines),
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Safe install preview failed.",
+            "error": str(error),
+        }
+
+
+@app.post("/safe-install/page")
+def safe_install_page(request: SafeInstallRequest):
+    try:
+        generated_file = get_generated_page_file(request.generated_file_name)
+        target_file = route_to_page_file(request.target_route)
+
+        new_content = generated_file.read_text(encoding="utf-8")
+
+        backup_file, target_existed = create_page_backup(target_file)
+
+        target_file.parent.mkdir(parents=True, exist_ok=True)
+        target_file.write_text(new_content, encoding="utf-8")
+
+        return {
+            "ok": True,
+            "message": "Page installed safely with backup.",
+            "generated_file": str(generated_file),
+            "target_file": str(target_file),
+            "backup_file": backup_file.name,
+            "target_existed": target_existed,
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Safe page install failed.",
+            "error": str(error),
+        }
+
+
+@app.get("/safe-install/backups")
+def list_safe_install_backups():
+    try:
+        SAFE_INSTALL_BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
+
+        backups = []
+
+        for backup_file in sorted(
+            SAFE_INSTALL_BACKUPS_DIR.glob("backup_*"),
+            key=lambda file: file.stat().st_mtime,
+            reverse=True,
+        ):
+            backups.append(
+                {
+                    "file_name": backup_file.name,
+                    "modified": datetime.fromtimestamp(backup_file.stat().st_mtime).strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    ),
+                    "size": backup_file.stat().st_size,
+                }
+            )
+
+        return {
+            "ok": True,
+            "count": len(backups),
+            "backups": backups,
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to list backups.",
+            "error": str(error),
+        }
+
+
+@app.post("/safe-install/rollback")
+def rollback_safe_install(request: SafeRollbackRequest):
+    try:
+        backup_name = safe_file_name_only(request.backup_file_name)
+        backup_file = SAFE_INSTALL_BACKUPS_DIR / backup_name
+
+        if not backup_file.exists():
+            return {
+                "ok": False,
+                "message": "Backup file not found.",
+            }
+
+        parts = backup_name.split("__", 1)
+
+        if len(parts) < 2:
+            return {
+                "ok": False,
+                "message": "Could not determine target file from backup name.",
+            }
+
+        relative_hint = parts[1].replace("__", "/")
+        target_file = FRONTEND_APP_DIR / relative_hint
+
+        content = backup_file.read_text(encoding="utf-8")
+
+        if content.strip() == "__FILE_DID_NOT_EXIST_BEFORE_INSTALL__":
+            if target_file.exists():
+                target_file.unlink()
+
+            return {
+                "ok": True,
+                "message": "Rollback complete. Installed file removed because original file did not exist.",
+                "target_file": str(target_file),
+                "backup_file": str(backup_file),
+            }
+
+        target_file.parent.mkdir(parents=True, exist_ok=True)
+        target_file.write_text(content, encoding="utf-8")
+
+        return {
+            "ok": True,
+            "message": "Rollback complete. Old page restored.",
+            "target_file": str(target_file),
+            "backup_file": str(backup_file),
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Rollback failed.",
+            "error": str(error),
+        }
+
+ERROR_LOG_FILE = CREWAI_DIR / "memory" / "error_log.json"
+
+
+def load_error_log():
+    ERROR_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+    if not ERROR_LOG_FILE.exists():
+        ERROR_LOG_FILE.write_text("[]", encoding="utf-8")
+        return []
+
+    try:
+        return json.loads(ERROR_LOG_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def save_error_log(errors: list):
+    ERROR_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    ERROR_LOG_FILE.write_text(json.dumps(errors, indent=2), encoding="utf-8")
+
+
+def record_error(source: str, step: str, message: str, details: str = ""):
+    errors = load_error_log()
+
+    errors.insert(
+        0,
+        {
+            "id": datetime.now().strftime("%Y%m%d_%H%M%S_%f"),
+            "source": source,
+            "step": step,
+            "message": message,
+            "details": details,
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "status": "open",
+        },
+    )
+
+    errors = errors[:200]
+    save_error_log(errors)
+    return errors[0]
+
+
+@app.get("/errors")
+def get_errors():
+    try:
+        errors = load_error_log()
+
+        return {
+            "ok": True,
+            "count": len(errors),
+            "open_count": len([error for error in errors if error.get("status") == "open"]),
+            "errors": errors,
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to load errors.",
+            "error": str(error),
+        }
+
+
+@app.post("/errors/test")
+def create_test_error():
+    error = record_error(
+        "Test System",
+        "Manual Test",
+        "This is a test error from dashboard.",
+        "Use this only to confirm the Errors page is working.",
+    )
+
+    return {
+        "ok": True,
+        "message": "Test error created.",
+        "error": error,
+    }
+
+
+@app.post("/errors/clear")
+def clear_errors():
+    save_error_log([])
+
+    return {
+        "ok": True,
+        "message": "All errors cleared.",
+    }
+
+
+CLOUD_DEPLOY_CHECKLIST_FILE = CREWAI_DIR / "memory" / "cloud_deploy_checklist.json"
+
+
+def default_cloud_deploy_checklist():
+    return [
+        {
+            "id": "frontend_build",
+            "category": "Frontend",
+            "title": "Frontend builds without errors",
+            "description": "Run npm run build and confirm no Next.js errors.",
+            "done": False,
+        },
+        {
+            "id": "backend_compile",
+            "category": "Backend",
+            "title": "Backend compiles without errors",
+            "description": "Run python -m py_compile main.py.",
+            "done": False,
+        },
+        {
+            "id": "env_not_pushed",
+            "category": "Security",
+            "title": ".env files are not pushed to GitHub",
+            "description": "Confirm git ls-files does not show .env.",
+            "done": False,
+        },
+        {
+            "id": "api_keys_safe",
+            "category": "Security",
+            "title": "API keys are stored only in cloud environment variables",
+            "description": "Do not hardcode NVIDIA key or GitHub tokens.",
+            "done": False,
+        },
+        {
+            "id": "github_pushed",
+            "category": "GitHub",
+            "title": "Frontend and backend pushed to GitHub",
+            "description": "Run git status, git add, git commit, git push.",
+            "done": False,
+        },
+        {
+            "id": "backend_health",
+            "category": "Backend",
+            "title": "Backend /health route works",
+            "description": "Confirm http://127.0.0.1:8000/health works locally.",
+            "done": False,
+        },
+        {
+            "id": "project_brain_saved",
+            "category": "Agents",
+            "title": "Project Brain saved",
+            "description": "Project Brain must contain mission, rules, roadmap, current pages, and next actions.",
+            "done": False,
+        },
+        {
+            "id": "agents_decide_working",
+            "category": "Agents",
+            "title": "Ask Agent Team works locally",
+            "description": "Confirm /agents/decide creates a decision report.",
+            "done": False,
+        },
+        {
+            "id": "safe_install_working",
+            "category": "Safety",
+            "title": "Safe Install backup and rollback works",
+            "description": "Confirm generated pages can be installed with backup and rollback.",
+            "done": False,
+        },
+        {
+            "id": "cloud_api_url",
+            "category": "Cloud",
+            "title": "Frontend can use cloud backend URL",
+            "description": "Before deploy, replace hardcoded local API URL with env-based URL.",
+            "done": False,
+        },
+    ]
+
+
+def load_cloud_deploy_checklist():
+    CLOUD_DEPLOY_CHECKLIST_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+    if not CLOUD_DEPLOY_CHECKLIST_FILE.exists():
+        checklist = default_cloud_deploy_checklist()
+        CLOUD_DEPLOY_CHECKLIST_FILE.write_text(
+            json.dumps(checklist, indent=2),
+            encoding="utf-8",
+        )
+        return checklist
+
+    try:
+        return json.loads(CLOUD_DEPLOY_CHECKLIST_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        checklist = default_cloud_deploy_checklist()
+        CLOUD_DEPLOY_CHECKLIST_FILE.write_text(
+            json.dumps(checklist, indent=2),
+            encoding="utf-8",
+        )
+        return checklist
+
+
+def save_cloud_deploy_checklist(checklist: list):
+    CLOUD_DEPLOY_CHECKLIST_FILE.parent.mkdir(parents=True, exist_ok=True)
+    CLOUD_DEPLOY_CHECKLIST_FILE.write_text(
+        json.dumps(checklist, indent=2),
+        encoding="utf-8",
+    )
+
+
+class CloudDeployChecklistUpdateRequest(BaseModel):
+    item_id: str
+    done: bool
+
+
+@app.get("/cloud-deploy/checklist")
+def get_cloud_deploy_checklist():
+    checklist = load_cloud_deploy_checklist()
+
+    done_count = len([item for item in checklist if item.get("done")])
+    total_count = len(checklist)
+    progress = 0 if total_count == 0 else round((done_count / total_count) * 100)
+
+    return {
+        "ok": True,
+        "items": checklist,
+        "done_count": done_count,
+        "total_count": total_count,
+        "progress": progress,
+        "ready_for_cloud": progress >= 90,
+        "message": "Cloud deploy checklist loaded.",
+    }
+
+
+@app.put("/cloud-deploy/checklist")
+def update_cloud_deploy_checklist(request: CloudDeployChecklistUpdateRequest):
+    checklist = load_cloud_deploy_checklist()
+
+    found = False
+
+    for item in checklist:
+        if item.get("id") == request.item_id:
+            item["done"] = request.done
+            found = True
+            break
+
+    if not found:
+        return {
+            "ok": False,
+            "message": "Checklist item not found.",
+        }
+
+    save_cloud_deploy_checklist(checklist)
+
+    done_count = len([item for item in checklist if item.get("done")])
+    total_count = len(checklist)
+    progress = 0 if total_count == 0 else round((done_count / total_count) * 100)
+
+    return {
+        "ok": True,
+        "message": "Checklist updated.",
+        "items": checklist,
+        "done_count": done_count,
+        "total_count": total_count,
+        "progress": progress,
+        "ready_for_cloud": progress >= 90,
+    }
+
+
+@app.post("/cloud-deploy/checklist/reset")
+def reset_cloud_deploy_checklist():
+    checklist = default_cloud_deploy_checklist()
+    save_cloud_deploy_checklist(checklist)
+
+    return {
+        "ok": True,
+        "message": "Cloud deploy checklist reset.",
+        "items": checklist,
     }

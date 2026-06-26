@@ -1,217 +1,181 @@
-**LifeSphere Frontend Implementation Plan**
-=====================================
+**Frontend Implementation Plan**
+================================
 
-**1. Tech Stack Decision**
--------------------------
+### 1. Tech Stack Decision
 
-* **Framework:** Next.js
-* **Language:** TypeScript
-* **State Management:** Redux Toolkit
-* **Routing:** Next.js built-in routing
-* **Styling:** CSS-in-JS with styled-components
-* **Third-party libraries:** Supabase, Chart.js, react-chartjs-2
+Based on the PRD and UI/UX design specification, we will use the following tech stack for the frontend implementation:
 
-**2. Project File Structure**
----------------------------
+* **Framework**: React
+* **Library**: React Router for routing, Redux for state management, and Material-UI for UI components
+* **Language**: JavaScript (ES6+)
+* **Build Tool**: Webpack
+* **CSS Preprocessor**: Sass
+
+### 2. Project File Structure
+
+The project file structure will be as follows:
 
 ```bash
+life-tracker/
 components/
-Header.tsx
-Footer.tsx
-Dashboard.tsx
-HealthTracking.tsx
-WorkoutTracking.tsx
+Dashboard.js
+HealthTracking.js
+WorkoutTracking.js
 ...
 containers/
-App.tsx
-DashboardContainer.tsx
-HealthTrackingContainer.tsx
-...
-pages/
-_index.tsx
-dashboard.tsx
-health-tracking.tsx
-workout-tracking.tsx
-...
-public/
-index.html
-...
-redux/
-store.ts
-reducers/
-healthTrackingReducer.ts
-workoutTrackingReducer.ts
+App.js
 ...
 actions/
-healthTrackingActions.ts
-workoutTrackingActions.ts
+healthTrackingActions.js
+workoutTrackingActions.js
 ...
-types/
-healthTrackingTypes.ts
-workoutTrackingTypes.ts
+reducers/
+healthTrackingReducer.js
+workoutTrackingReducer.js
 ...
-styles/
-global.css
+routes/
+dashboard.js
+healthTracking.js
+workoutTracking.js
 ...
-utils/
-api.ts
-constants.ts
+sass/
+styles.scss
 ...
+index.js
+package.json
+README.md
 ```
 
-**3. Component Architecture**
----------------------------
+### 3. Component Architecture
 
-* **Header:** Navigation menu and app title
-* **Footer:** Navigation menu and copyright information
-* **Dashboard:** Overview of user's data, including health, workout, food, sleep, tasks, books, and finance
-* **HealthTracking:** Form for tracking health metrics, including weight, BMI, body fat, and heart rate
-* **WorkoutTracking:** Form for tracking workout metrics, including exercise, sets, reps, and weight
-* **FoodAndNutrition:** Form for tracking food intake and nutrition metrics
-* **SleepAndRecovery:** Form for tracking sleep metrics and recovery score
-* **TasksGoalsAndHabits:** Form for tracking tasks, goals, and habits
-* **BooksAndKnowledge:** Form for tracking books and knowledge metrics
-* **Finance:** Form for tracking finance metrics, including income, expenses, and savings
-* **RewardSoloLevelingSystem:** Display of user's rewards and solo leveling system progress
+The component architecture will be as follows:
 
-**4. State Management Plan**
----------------------------
+* **Dashboard**: A container component that renders the dashboard layout
+* **HealthTracking**: A container component that renders the health tracking layout
+* **WorkoutTracking**: A container component that renders the workout tracking layout
+* **...**: Other container components for each feature
+* **Cards**: A presentational component that renders a card layout
+* **Buttons**: A presentational component that renders a button layout
+* **...**: Other presentational components for each UI element
 
-* **Redux Store:** Centralized state management using Redux Toolkit
-* **Reducers:** healthTrackingReducer, workoutTrackingReducer, foodAndNutritionReducer, sleepAndRecoveryReducer, tasksGoalsAndHabitsReducer, booksAndKnowledgeReducer, financeReducer
-* **Actions:** healthTrackingActions, workoutTrackingActions, foodAndNutritionActions, sleepAndRecoveryActions, tasksGoalsAndHabitsActions, booksAndKnowledgeActions, financeActions
-* **Types:** healthTrackingTypes, workoutTrackingTypes, foodAndNutritionTypes, sleepAndRecoveryTypes, tasksGoalsAndHabitsTypes, booksAndKnowledgeTypes, financeTypes
+### 4. State Management Plan
 
-**5. Routing Plan**
-------------------
+We will use Redux for state management. The state will be divided into the following reducers:
 
-* **Next.js built-in routing:** Using Next.js built-in routing for client-side routing
-* **Pages:** _index.tsx, dashboard.tsx, health-tracking.tsx, workout-tracking.tsx, ...
+* **healthTrackingReducer**: Manages the health tracking state
+* **workoutTrackingReducer**: Manages the workout tracking state
+* **...**: Other reducers for each feature
 
-**6. HTML Structure for major screens**
--------------------------------------
+The actions will be divided into the following action creators:
 
-* **Dashboard:**
+* **healthTrackingActions**: Creates actions for health tracking
+* **workoutTrackingActions**: Creates actions for workout tracking
+* **...**: Other action creators for each feature
+
+### 5. Routing Plan
+
+We will use React Router for routing. The routes will be as follows:
+
+* **/dashboard**: Renders the dashboard layout
+* **/health-tracking**: Renders the health tracking layout
+* **/workout-tracking**: Renders the workout tracking layout
+* **...**: Other routes for each feature
+
+### 6. HTML Structure for Major Screens
+
+The HTML structure for the major screens will be as follows:
+
+* **Dashboard**:
 ```html
-<div>
-  <Header />
-  <main>
-    <section>
-      <h1>Daily Score</h1>
-      <p>{dailyScore}</p>
-    </section>
-    <section>
-      <h1>Health Score</h1>
-      <p>{healthScore}</p>
-    </section>
-    ...
-  </main>
-  <Footer />
+<div className="dashboard">
+  <h1>Dashboard</h1>
+  <Cards />
+  <Buttons />
 </div>
 ```
-* **HealthTracking:**
+
+* **HealthTracking**:
 ```html
-<div>
-  <Header />
-  <main>
-    <section>
-      <h1>Health Metrics</h1>
-      <form>
-        <label>Weight:</label>
-        <input type="number" value={weight} onChange={handleWeightChange} />
-        ...
-      </form>
-    </section>
-  </main>
-  <Footer />
+<div className="health-tracking">
+  <h1>Health Tracking</h1>
+  <Cards />
+  <Buttons />
 </div>
 ```
-**7. CSS design system and component styles**
---------------------------------------------
 
-* **Global CSS:**
-```css
-body {
-  font-family: Open Sans;
-  margin: 0;
-  padding: 0;
-}
+* **WorkoutTracking**:
+```html
+<div className="workout-tracking">
+  <h1>Workout Tracking</h1>
+  <Cards />
+  <Buttons />
+</div>
+```
 
-main {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 20px;
-}
+### 7. CSS Design System and Component Styles
 
-section {
-  background-color: #f7f7f7;
-  padding: 20px;
-  margin-bottom: 20px;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-}
+We will use Material-UI for UI components and Sass for CSS preprocessing. The CSS design system will be as follows:
 
-h1 {
-  font-weight: bold;
-  font-size: 24px;
-  margin-bottom: 10px;
+* **Variables**: Define variables for colors, typography, and spacing
+* **Mixins**: Define mixins for common CSS patterns
+* **Components**: Define styles for each component
+
+The component styles will be as follows:
+
+* **Cards**:
+```scss
+.card {
+  background-color: #fff;
+  border: 1px solid #ddd;
+  padding: 16px;
 }
 ```
-* **Component styles:**
-```css
-.Header {
-  background-color: #1a1a2e;
-  color: #ffffff;
-  padding: 20px;
-  text-align: center;
-}
 
-.Footer {
-  background-color: #1a1a2e;
-  color: #ffffff;
-  padding: 20px;
-  text-align: center;
+* **Buttons**:
+```scss
+.button {
+  background-color: #1A1A2E;
+  color: #fff;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
 }
 ```
-**8. JavaScript logic plan**
----------------------------
 
-* **API calls:** Using Supabase for API calls to retrieve and update user data
-* **Redux actions:** Using Redux actions to update state and dispatch API calls
-* **Component logic:** Using React hooks to manage component state and side effects
+### 8. JavaScript Logic Plan
 
-**9. localStorage schema**
--------------------------
+The JavaScript logic will be as follows:
 
-* **User data:** Storing user data in localStorage using a schema like this:
-```json
-{
-  "userId": 1,
-  "healthMetrics": {
-    "weight": 70,
-    "bmi": 25,
-    "bodyFat": 20,
-    "heartRate": 60
-  },
-  "workoutMetrics": {
-    "exercise": "push-ups",
-    "sets": 3,
-    "reps": 10,
-    "weight": 10
-  },
-  ...
-}
-```
-**10. Third-party libraries**
----------------------------
+* **Components**: Define the component logic for each feature
+* **Actions**: Define the action creators for each feature
+* **Reducers**: Define the reducers for each feature
+* **API**: Define the API endpoints for each feature
 
-* **Supabase:** Using Supabase for API calls and data storage
-* **Chart.js:** Using Chart.js for charting and graphing user data
-* **react-chartjs-2:** Using react-chartjs-2 for integrating Chart.js with React
+### 9. localStorage Schema
 
-**11. Build and bundle plan**
----------------------------
+We will use localStorage to store user data. The localStorage schema will be as follows:
 
-* **Next.js:** Using Next.js for building and bundling the application
-* **Webpack:** Using Webpack for bundling and optimizing the application
-* **Babel:** Using Babel for transpiling and polyfilling the application
+* **user**: Stores the user data
+* **healthTracking**: Stores the health tracking data
+* **workoutTracking**: Stores the workout tracking data
+* **...**: Other localStorage keys for each feature
+
+### 10. Third-Party Libraries
+
+We will use the following third-party libraries:
+
+* **Material-UI**: For UI components
+* **React Router**: For routing
+* **Redux**: For state management
+* **Sass**: For CSS preprocessing
+
+### 11. Build and Bundle Plan
+
+We will use Webpack for building and bundling the application. The build and bundle plan will be as follows:
+
+* **Development**: Use the `webpack-dev-server` for development
+* **Production**: Use the `webpack` command for production
+* **Bundle**: Use the `webpack` command to bundle the application
+
+This is the complete frontend implementation plan for the LifeTracker application.

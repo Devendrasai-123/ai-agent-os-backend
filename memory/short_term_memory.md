@@ -32,3 +32,43 @@
 - Use resume_run.py if any output file is missing.
 - Use archive_run.py after successful runs.
 - Build dashboard UI after memory and resume are stable.
+
+# Current Agent Brief
+
+_Updated: 2026-06-25 14:59:00_
+
+Current app/project focus: Personal AI Health Tracker
+
+A private personal app for tracking health, gym, sleep, habits, finance, books, and tasks. The AI should help me plan my day, understand my body data, and build my app step by step.
+
+# Current Agent Brief
+
+_Updated: 2026-06-25 14:59:01_
+
+Current app/project focus: Personal AI Health Tracker
+
+A private personal app for tracking health, gym, sleep, habits, finance, books, and tasks. The AI should help me plan my day, understand my body data, and build my app step by step.
+
+# Current Agent Brief
+
+_Updated: 2026-06-25 15:16:08_
+
+Current app/project focus: Personal AI Health Tracker
+
+A private personal app for tracking health, gym, sleep, habits, finance, books, and tasks. The AI should help me plan my day, understand my body data, and build my app step by step.
+
+# Current Agent Brief
+
+_Updated: 2026-06-25 15:39:46_
+
+Current app/project focus: Personal AI Health Tracker
+
+A private personal app for tracking health, gym, sleep, habits, finance, books, and tasks. The AI should help me plan my day, understand my body data, and build my app step by step.
+
+# Current Agent Brief
+
+_Updated: 2026-06-26 10:21:35_
+
+Current app/project focus: Personal AI Health Tracker
+
+A private personal app for tracking health, gym, sleep, habits, finance, books, and tasks. The AI should help me plan my day, understand my body data, and build my app step by step.

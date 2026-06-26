@@ -1,0 +1,42 @@
+{
+  "ok": true,
+  "is_running": false,
+  "current_agent": "Idle",
+  "current_task": "No active task.",
+  "progress": 0,
+  "last_result": "No run yet.",
+  "error": "",
+  "updated_at": "2026-06-26 10:48:24",
+  "agents": [
+    {
+      "name": "Product Manager",
+      "status": "idle",
+      "task": ""
+    },
+    {
+      "name": "UI/UX Designer",
+      "status": "idle",
+      "task": ""
+    },
+    {
+      "name": "Frontend Developer",
+      "status": "idle",
+      "task": ""
+    },
+    {
+      "name": "Backend Developer",
+      "status": "idle",
+      "task": ""
+    },
+    {
+      "name": "QA Tester",
+      "status": "idle",
+      "task": ""
+    },
+    {
+      "name": "Project Reviewer",
+      "status": "idle",
+      "task": ""
+    }
+  ]
+}
