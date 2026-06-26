@@ -4873,3 +4873,194 @@ def reset_agent_workflow():
             "error": str(error),
         }
 
+
+# ============================================================
+# Agent Workflow Advance v2
+# ============================================================
+
+@app.post("/agent-workflow/advance")
+def advance_agent_workflow():
+    try:
+        AGENT_WORKFLOW_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+        if not AGENT_WORKFLOW_FILE.exists():
+            workflow = default_agent_workflow("Build next safe feature.")
+        else:
+            workflow = json.loads(AGENT_WORKFLOW_FILE.read_text(encoding="utf-8"))
+
+        stages = workflow.get("stages", [])
+
+        if not stages:
+            workflow = default_agent_workflow("Build next safe feature.")
+            stages = workflow.get("stages", [])
+
+        changed = False
+
+        # If one stage is running, complete it.
+        for stage in stages:
+            if stage.get("status") == "running":
+                stage["status"] = "done"
+                stage["progress"] = 100
+                stage["output"] = f'{stage.get("agent")} completed this stage safely.'
+                changed = True
+                break
+
+        # If nothing was running, start the first waiting stage.
+        if not changed:
+            for stage in stages:
+                if stage.get("status") == "waiting":
+                    stage["status"] = "running"
+                    stage["progress"] = 50
+                    stage["output"] = f'{stage.get("agent")} is working on this stage.'
+                    changed = True
+                    break
+
+        # If all stages are done.
+        if not changed:
+            workflow["status"] = "completed"
+            workflow["message"] = "All workflow stages are complete."
+        else:
+            all_done = all(stage.get("status") == "done" for stage in stages)
+            workflow["status"] = "completed" if all_done else "in_progress"
+            workflow["message"] = "Workflow advanced safely."
+
+        workflow["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        workflow["stages"] = stages
+
+        AGENT_WORKFLOW_FILE.write_text(
+            json.dumps(workflow, indent=2),
+            encoding="utf-8",
+        )
+
+        return workflow
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to advance workflow.",
+            "error": str(error),
+        }
+
+
+# ============================================================
+# Agent Workflow Report Export v1
+# ============================================================
+
+@app.post("/agent-workflow/export-report")
+def export_agent_workflow_report():
+    try:
+        AGENT_WORKFLOW_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+        if not AGENT_WORKFLOW_FILE.exists():
+            workflow = default_agent_workflow("No workflow found.")
+        else:
+            workflow = json.loads(AGENT_WORKFLOW_FILE.read_text(encoding="utf-8"))
+
+        reports_dir = GENERATED_REPORTS_DIR
+        reports_dir.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_id = workflow.get("run_id", f"workflow_{timestamp}")
+        report_file = reports_dir / f"{run_id}_workflow_report_{timestamp}.md"
+
+        stages = workflow.get("stages", [])
+
+        stage_text = ""
+
+        for index, stage in enumerate(stages, start=1):
+            stage_text += f"""
+## Stage {index}: {stage.get("agent", "Unknown Agent")}
+
+- Status: {stage.get("status", "unknown")}
+- Progress: {stage.get("progress", 0)}%
+- Task: {stage.get("task", "")}
+- Output: {stage.get("output", "No output yet.")}
+
+"""
+
+        report_content = f"""# Agent Workflow Report
+
+Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+## Workflow Summary
+
+- Run ID: {workflow.get("run_id", "No run ID")}
+- Status: {workflow.get("status", "unknown")}
+- Created At: {workflow.get("created_at", "")}
+- Updated At: {workflow.get("updated_at", "")}
+
+## User Request
+
+{workflow.get("user_request", "No request found.")}
+
+{stage_text}
+
+## Safety Notes
+
+- This report was exported from Agent Workflow Board.
+- No files were modified by this export.
+- Use Safe Install before applying generated pages.
+- Do not expose secrets or API keys.
+
+## Next Recommended Action
+
+Review completed stages, then continue with Safe Install or Prompt Inspector before making file changes.
+"""
+
+        report_file.write_text(report_content, encoding="utf-8")
+
+        return {
+            "ok": True,
+            "message": "Workflow report exported.",
+            "file_name": report_file.name,
+            "file_path": str(report_file),
+            "preview": report_content[:1200],
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to export workflow report.",
+            "error": str(error),
+        }
+
+
+@app.get("/agent-workflow/export-report/latest")
+def latest_agent_workflow_report_preview():
+    try:
+        reports_dir = GENERATED_REPORTS_DIR
+        reports_dir.mkdir(parents=True, exist_ok=True)
+
+        reports = sorted(
+            reports_dir.glob("*workflow_report_*.md"),
+            key=lambda file: file.stat().st_mtime,
+            reverse=True,
+        )
+
+        if not reports:
+            return {
+                "ok": True,
+                "found": False,
+                "message": "No workflow report exported yet.",
+                "file_name": "",
+                "preview": "",
+            }
+
+        latest = reports[0]
+        content = latest.read_text(encoding="utf-8", errors="ignore")
+
+        return {
+            "ok": True,
+            "found": True,
+            "file_name": latest.name,
+            "modified": datetime.fromtimestamp(latest.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+            "preview": content[:3000],
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to load latest workflow report.",
+            "error": str(error),
+        }
+
