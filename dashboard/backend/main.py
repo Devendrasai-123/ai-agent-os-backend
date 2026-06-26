@@ -4653,3 +4653,87 @@ def page_builder_context():
             "message": "Failed to load Page Builder context.",
             "error": str(error),
         }
+# ============================================================
+# Prompt Inspector v1
+# ============================================================
+
+@app.get("/prompt-inspector/page-builder")
+def prompt_inspector_page_builder():
+    try:
+        project_brain_file = CREWAI_DIR / "memory" / "project_brain.md"
+
+        def read_prompt_context(file_path, max_chars: int = 5000):
+            try:
+                if not file_path.exists():
+                    return ""
+                content = file_path.read_text(encoding="utf-8", errors="ignore")
+                if len(content) > max_chars:
+                    return content[-max_chars:]
+                return content
+            except Exception:
+                return ""
+
+        project_brain = read_prompt_context(project_brain_file, 7000)
+        long_memory = read_prompt_context(LONG_TERM_MEMORY, 5000)
+        ui_style = read_prompt_context(UI_STYLE_MEMORY, 5000)
+        page_plan = read_prompt_context(PAGE_PLAN_MEMORY, 5000)
+
+        feature_registry = ""
+        try:
+            if FEATURE_REGISTRY_FILE.exists():
+                feature_registry = FEATURE_REGISTRY_FILE.read_text(
+                    encoding="utf-8",
+                    errors="ignore",
+                )[-5000:]
+        except Exception:
+            feature_registry = ""
+
+        final_prompt = f"""
+You are the AI Agent OS Page Builder.
+
+Your job:
+Build a safe, clean, production-ready Next.js page for Devendra's AI Agent OS.
+
+PROJECT BRAIN:
+{project_brain or "No Project Brain found."}
+
+LONG MEMORY:
+{long_memory or "No long memory found."}
+
+UI STYLE MEMORY:
+{ui_style or "No UI style memory found."}
+
+PAGE PLAN MEMORY:
+{page_plan or "No page plan memory found."}
+
+FEATURE REGISTRY:
+{feature_registry or "No feature registry found."}
+
+STRICT RULES:
+- Do not overwrite existing files without approval.
+- Do not expose API keys or secrets.
+- Use local backend API base from NEXT_PUBLIC_API_BASE or http://127.0.0.1:8000.
+- Keep dark dashboard UI style.
+- Return clean code only when generating pages.
+- Prefer safe install, backup, preview, and rollback workflow.
+"""
+
+        return {
+            "ok": True,
+            "project_brain_chars": len(project_brain),
+            "long_memory_chars": len(long_memory),
+            "ui_style_chars": len(ui_style),
+            "page_plan_chars": len(page_plan),
+            "feature_registry_chars": len(feature_registry),
+            "final_prompt_chars": len(final_prompt),
+            "final_prompt": final_prompt.strip(),
+            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to build prompt inspector.",
+            "error": str(error),
+        }
+
