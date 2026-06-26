@@ -1,0 +1,72 @@
+[
+  {
+    "id": "frontend_build",
+    "category": "Frontend",
+    "title": "Frontend builds without errors",
+    "description": "Run npm run build and confirm no Next.js errors.",
+    "done": false
+  },
+  {
+    "id": "backend_compile",
+    "category": "Backend",
+    "title": "Backend compiles without errors",
+    "description": "Run python -m py_compile main.py.",
+    "done": false
+  },
+  {
+    "id": "env_not_pushed",
+    "category": "Security",
+    "title": ".env files are not pushed to GitHub",
+    "description": "Confirm git ls-files does not show .env.",
+    "done": false
+  },
+  {
+    "id": "api_keys_safe",
+    "category": "Security",
+    "title": "API keys are stored only in cloud environment variables",
+    "description": "Do not hardcode NVIDIA key or GitHub tokens.",
+    "done": false
+  },
+  {
+    "id": "github_pushed",
+    "category": "GitHub",
+    "title": "Frontend and backend pushed to GitHub",
+    "description": "Run git status, git add, git commit, git push.",
+    "done": false
+  },
+  {
+    "id": "backend_health",
+    "category": "Backend",
+    "title": "Backend /health route works",
+    "description": "Confirm http://127.0.0.1:8000/health works locally.",
+    "done": false
+  },
+  {
+    "id": "project_brain_saved",
+    "category": "Agents",
+    "title": "Project Brain saved",
+    "description": "Project Brain must contain mission, rules, roadmap, current pages, and next actions.",
+    "done": false
+  },
+  {
+    "id": "agents_decide_working",
+    "category": "Agents",
+    "title": "Ask Agent Team works locally",
+    "description": "Confirm /agents/decide creates a decision report.",
+    "done": false
+  },
+  {
+    "id": "safe_install_working",
+    "category": "Safety",
+    "title": "Safe Install backup and rollback works",
+    "description": "Confirm generated pages can be installed with backup and rollback.",
+    "done": false
+  },
+  {
+    "id": "cloud_api_url",
+    "category": "Cloud",
+    "title": "Frontend can use cloud backend URL",
+    "description": "Before deploy, replace hardcoded local API URL with env-based URL.",
+    "done": false
+  }
+]

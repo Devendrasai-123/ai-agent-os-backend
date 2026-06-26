@@ -3294,3 +3294,884 @@ def reset_cloud_deploy_checklist():
         "message": "Cloud deploy checklist reset.",
         "items": checklist,
     }
+
+AGENT_TASK_RUNS_FILE = CREWAI_DIR / "memory" / "agent_task_runs.json"
+AGENT_TASK_RUNS_DIR = GENERATED_REPORTS_DIR / "task_runs"
+
+
+class AgentTaskRunnerRequest(BaseModel):
+    report_file_name: str = ""
+    task_goal: str = ""
+    target_route: str = ""
+    build_mode: str = "plan_only"
+    save_to_memory: bool = True
+
+
+def safe_task_runner_file_name(file_name: str):
+    if ".." in file_name or "/" in file_name or "\\" in file_name:
+        raise ValueError("Invalid file name.")
+    return file_name
+
+
+def read_text_limited(file_path: Path, max_chars: int = 20000):
+    if not file_path.exists():
+        return ""
+
+    content = file_path.read_text(encoding="utf-8", errors="ignore")
+
+    if len(content) > max_chars:
+        return content[-max_chars:]
+
+    return content
+
+
+def load_agent_task_runs():
+    AGENT_TASK_RUNS_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+    if not AGENT_TASK_RUNS_FILE.exists():
+        AGENT_TASK_RUNS_FILE.write_text("[]", encoding="utf-8")
+        return []
+
+    try:
+        return json.loads(AGENT_TASK_RUNS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def save_agent_task_runs(runs: list):
+    AGENT_TASK_RUNS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    AGENT_TASK_RUNS_FILE.write_text(json.dumps(runs, indent=2), encoding="utf-8")
+
+
+def safe_update_task_status(is_running: bool, agent: str, task: str, progress: int, result: str = "", error: str = ""):
+    try:
+        if "update_agent_status" in globals():
+            update_agent_status(is_running, agent, task, progress, result, error)
+    except Exception:
+        pass
+
+
+def safe_record_task_error(source: str, step: str, message: str, details: str = ""):
+    try:
+        if "record_error" in globals():
+            record_error(source, step, message, details)
+    except Exception:
+        pass
+
+
+def get_latest_decision_report_file():
+    GENERATED_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    reports = sorted(
+        GENERATED_REPORTS_DIR.glob("agent_decision_*.md"),
+        key=lambda file: file.stat().st_mtime,
+        reverse=True,
+    )
+
+    if not reports:
+        return None
+
+    return reports[0]
+
+
+def build_task_runner_memory_context():
+    try:
+        if "build_full_agent_context" in globals():
+            return build_full_agent_context()
+    except Exception:
+        pass
+
+    context = ""
+
+    try:
+        project_brain_file = CREWAI_DIR / "memory" / "project_brain.md"
+        context += "\n\n# PROJECT BRAIN\n"
+        context += read_text_limited(project_brain_file, 12000)
+    except Exception:
+        pass
+
+    try:
+        context += "\n\n# LONG TERM MEMORY\n"
+        context += read_text_limited(LONG_TERM_MEMORY, 8000)
+    except Exception:
+        pass
+
+    try:
+        context += "\n\n# PAGE PLAN MEMORY\n"
+        context += read_text_limited(PAGE_PLAN_MEMORY, 8000)
+    except Exception:
+        pass
+
+    try:
+        context += "\n\n# FEATURE REGISTRY\n"
+        context += read_text_limited(FEATURE_REGISTRY_FILE, 8000)
+    except Exception:
+        pass
+
+    return context.strip()
+
+
+@app.get("/task-runner/runs")
+def list_agent_task_runs():
+    try:
+        runs = load_agent_task_runs()
+
+        return {
+            "ok": True,
+            "count": len(runs),
+            "runs": runs,
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to load agent task runs.",
+            "error": str(error),
+        }
+
+
+@app.post("/task-runner/start")
+def start_agent_task_runner(request: AgentTaskRunnerRequest):
+    try:
+        safe_update_task_status(
+            True,
+            "Product Manager",
+            "Starting Agent Task Runner and reading selected decision report.",
+            10,
+            "Task runner started.",
+        )
+
+        nvidia_api_key = os.getenv("NVIDIA_API_KEY")
+
+        if not nvidia_api_key:
+            return {
+                "ok": False,
+                "message": "NVIDIA_API_KEY missing. Add it to backend .env or cloud environment variables.",
+            }
+
+        selected_report_file = None
+
+        if request.report_file_name.strip():
+            report_name = safe_task_runner_file_name(request.report_file_name.strip())
+            selected_report_file = GENERATED_REPORTS_DIR / report_name
+        else:
+            selected_report_file = get_latest_decision_report_file()
+
+        if not selected_report_file or not selected_report_file.exists():
+            return {
+                "ok": False,
+                "message": "No decision report found. First use Ask Agent Team to create a decision report.",
+            }
+
+        decision_report_text = read_text_limited(selected_report_file, 25000)
+        memory_context = build_task_runner_memory_context()
+
+        safe_update_task_status(
+            True,
+            "UI/UX Designer",
+            "Reading Project Brain, Feature Registry, and selected decision report.",
+            30,
+            "Context loaded.",
+        )
+
+        task_goal = request.task_goal.strip() or "Convert this decision report into a safe executable build task plan."
+        target_route = request.target_route.strip() or "Not selected yet."
+        build_mode = request.build_mode.strip() or "plan_only"
+
+        prompt = f"""
+You are Devendra's Agent Task Runner.
+
+Your job:
+Convert the selected Agent Decision Report into a practical executable task plan for the AI app builder dashboard.
+
+Important safety rules:
+- Do not pretend files were edited.
+- Do not overwrite source code.
+- Do not deploy anything.
+- Do not use secrets in output.
+- If code generation is needed, describe exactly what file should be generated next.
+- Safe Install must be used before installing generated pages.
+- Ask questions before database, API key, deployment, auth, payment, or private-data decisions.
+- Use Project Brain as source of truth.
+- Keep the plan practical for a solo developer using AI tools.
+
+Build mode:
+{build_mode}
+
+User task goal:
+{task_goal}
+
+Target route:
+{target_route}
+
+Selected decision report file:
+{selected_report_file.name}
+
+# PROJECT MEMORY CONTEXT
+{memory_context}
+
+# SELECTED DECISION REPORT
+{decision_report_text}
+
+Return the result in this exact structure:
+
+# Agent Task Run
+
+## 1. Run Summary
+Explain what this run will build.
+
+## 2. Agent Assignments
+- Product Manager:
+- UI/UX Designer:
+- Frontend Developer:
+- Backend Developer:
+- QA Tester:
+- Project Reviewer:
+
+## 3. Step-by-Step Execution Plan
+Give numbered steps.
+
+## 4. Files To Create Or Edit
+List exact likely files.
+
+## 5. Backend Routes Needed
+List routes if needed.
+
+## 6. Frontend Pages Or Components Needed
+List pages/components if needed.
+
+## 7. Validation Commands
+Give exact commands for Windows PowerShell.
+
+## 8. Safe Install Plan
+Explain preview, compare, approve, backup, rollback flow.
+
+## 9. Missing Information / Questions
+List anything Devendra must answer before risky work.
+
+## 10. Next Best Action
+Give the single next action to do now.
+"""
+
+        safe_update_task_status(
+            True,
+            "Frontend Developer",
+            "Calling AI model to create executable task plan.",
+            65,
+            "Agent task prompt prepared.",
+        )
+
+        client = OpenAI(
+            base_url="https://integrate.api.nvidia.com/v1",
+            api_key=nvidia_api_key,
+        )
+
+        model_name = os.getenv("MODEL", "moonshotai/kimi-k2.6")
+
+        completion = client.chat.completions.create(
+            model=model_name,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a senior AI software project manager and task runner.",
+                },
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
+            ],
+            temperature=0.2,
+            max_tokens=5000,
+        )
+
+        result = completion.choices[0].message.content or ""
+
+        safe_update_task_status(
+            True,
+            "QA Tester",
+            "Saving task run report and updating task memory.",
+            85,
+            "Task plan generated.",
+        )
+
+        AGENT_TASK_RUNS_DIR.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_file = AGENT_TASK_RUNS_DIR / f"task_run_{timestamp}.md"
+
+        report_text = f"""# Agent Task Runner Report
+
+Created: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+Source Decision Report: {selected_report_file.name}
+Build Mode: {build_mode}
+Target Route: {target_route}
+Task Goal: {task_goal}
+
+---
+
+{result}
+"""
+
+        run_file.write_text(report_text, encoding="utf-8")
+
+        runs = load_agent_task_runs()
+
+        run_item = {
+            "id": timestamp,
+            "file_name": run_file.name,
+            "file_path": str(run_file),
+            "source_report": selected_report_file.name,
+            "task_goal": task_goal,
+            "target_route": target_route,
+            "build_mode": build_mode,
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "status": "completed",
+            "preview": result[:700],
+        }
+
+        runs.insert(0, run_item)
+        runs = runs[:100]
+        save_agent_task_runs(runs)
+
+        if request.save_to_memory:
+            try:
+                append_text_file(
+                    PAGE_PLAN_MEMORY,
+                    f"""
+
+## Agent Task Runner Run - {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+Source Report: {selected_report_file.name}
+Task Goal: {task_goal}
+Target Route: {target_route}
+Build Mode: {build_mode}
+
+Saved Run File: {run_file.name}
+""",
+                )
+            except Exception:
+                pass
+
+        safe_update_task_status(
+            False,
+            "Project Reviewer",
+            "Agent Task Runner completed.",
+            100,
+            "Task run report created successfully.",
+        )
+
+        return {
+            "ok": True,
+            "message": "Agent Task Runner completed.",
+            "run": run_item,
+            "content": report_text,
+        }
+
+    except Exception as error:
+        safe_update_task_status(
+            False,
+            "Project Reviewer",
+            "Agent Task Runner failed.",
+            100,
+            "Task runner failed.",
+            str(error),
+        )
+
+        safe_record_task_error(
+            "Agent Task Runner",
+            "task-runner/start",
+            "Agent Task Runner failed.",
+            str(error),
+        )
+
+        return {
+            "ok": False,
+            "message": "Agent Task Runner failed.",
+            "error": str(error),
+        }
+# ============================================================
+# Agent Task Runner v1
+# ============================================================
+
+import os
+import json
+from datetime import datetime
+from openai import OpenAI
+from pydantic import BaseModel
+
+AGENT_TASK_RUNS_FILE = CREWAI_DIR / "memory" / "agent_task_runs.json"
+AGENT_TASK_RUNS_DIR = GENERATED_REPORTS_DIR / "task_runs"
+
+
+class AgentTaskRunnerRequest(BaseModel):
+    report_file_name: str = ""
+    task_goal: str = ""
+    target_route: str = ""
+    build_mode: str = "plan_only"
+    save_to_memory: bool = True
+
+
+def task_runner_safe_file_name(file_name: str):
+    if ".." in file_name or "/" in file_name or "\\" in file_name:
+        raise ValueError("Invalid file name.")
+    return file_name
+
+
+def task_runner_read_text_limited(file_path, max_chars: int = 20000):
+    if not file_path.exists():
+        return ""
+
+    content = file_path.read_text(encoding="utf-8", errors="ignore")
+
+    if len(content) > max_chars:
+        return content[-max_chars:]
+
+    return content
+
+
+def load_agent_task_runs():
+    AGENT_TASK_RUNS_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+    if not AGENT_TASK_RUNS_FILE.exists():
+        AGENT_TASK_RUNS_FILE.write_text("[]", encoding="utf-8")
+        return []
+
+    try:
+        return json.loads(AGENT_TASK_RUNS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def save_agent_task_runs(runs: list):
+    AGENT_TASK_RUNS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    AGENT_TASK_RUNS_FILE.write_text(json.dumps(runs, indent=2), encoding="utf-8")
+
+
+def task_runner_update_status(is_running: bool, agent: str, task: str, progress: int, result: str = "", error: str = ""):
+    try:
+        if "update_agent_status" in globals():
+            update_agent_status(is_running, agent, task, progress, result, error)
+    except Exception:
+        pass
+
+
+def task_runner_record_error(source: str, step: str, message: str, details: str = ""):
+    try:
+        if "record_error" in globals():
+            record_error(source, step, message, details)
+    except Exception:
+        pass
+
+
+def get_latest_decision_report_file():
+    GENERATED_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    reports = sorted(
+        GENERATED_REPORTS_DIR.glob("agent_decision_*.md"),
+        key=lambda file: file.stat().st_mtime,
+        reverse=True,
+    )
+
+    if not reports:
+        return None
+
+    return reports[0]
+
+
+def build_task_runner_memory_context():
+    try:
+        if "build_full_agent_context" in globals():
+            return build_full_agent_context()
+    except Exception:
+        pass
+
+    context = ""
+
+    try:
+        project_brain_file = CREWAI_DIR / "memory" / "project_brain.md"
+        context += "\n\n# PROJECT BRAIN\n"
+        context += task_runner_read_text_limited(project_brain_file, 12000)
+    except Exception:
+        pass
+
+    try:
+        context += "\n\n# LONG TERM MEMORY\n"
+        context += task_runner_read_text_limited(LONG_TERM_MEMORY, 8000)
+    except Exception:
+        pass
+
+    try:
+        context += "\n\n# PAGE PLAN MEMORY\n"
+        context += task_runner_read_text_limited(PAGE_PLAN_MEMORY, 8000)
+    except Exception:
+        pass
+
+    try:
+        context += "\n\n# FEATURE REGISTRY\n"
+        context += task_runner_read_text_limited(FEATURE_REGISTRY_FILE, 8000)
+    except Exception:
+        pass
+
+    return context.strip()
+
+
+@app.get("/task-runner/runs")
+def list_agent_task_runs():
+    try:
+        runs = load_agent_task_runs()
+
+        return {
+            "ok": True,
+            "count": len(runs),
+            "runs": runs,
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to load agent task runs.",
+            "error": str(error),
+        }
+
+
+@app.post("/task-runner/start")
+def start_agent_task_runner(request: AgentTaskRunnerRequest):
+    try:
+        task_runner_update_status(
+            True,
+            "Product Manager",
+            "Starting Agent Task Runner and reading selected decision report.",
+            10,
+            "Task runner started.",
+        )
+
+        nvidia_api_key = os.getenv("NVIDIA_API_KEY")
+
+        if not nvidia_api_key:
+            return {
+                "ok": False,
+                "message": "NVIDIA_API_KEY missing. Add it to backend .env file.",
+            }
+
+        selected_report_file = None
+
+        if request.report_file_name.strip():
+            report_name = task_runner_safe_file_name(request.report_file_name.strip())
+            selected_report_file = GENERATED_REPORTS_DIR / report_name
+        else:
+            selected_report_file = get_latest_decision_report_file()
+
+        if not selected_report_file or not selected_report_file.exists():
+            return {
+                "ok": False,
+                "message": "No decision report found. First use Ask Agent Team to create a decision report.",
+            }
+
+        decision_report_text = task_runner_read_text_limited(selected_report_file, 25000)
+        memory_context = build_task_runner_memory_context()
+
+        task_runner_update_status(
+            True,
+            "UI/UX Designer",
+            "Reading Project Brain, Feature Registry, and selected decision report.",
+            30,
+            "Context loaded.",
+        )
+
+        task_goal = request.task_goal.strip() or "Convert this decision report into a safe executable build task plan."
+        target_route = request.target_route.strip() or "Not selected yet."
+        build_mode = request.build_mode.strip() or "plan_only"
+
+        prompt = f"""
+You are Devendra's Agent Task Runner.
+
+Your job:
+Convert the selected Agent Decision Report into a practical executable task plan for the AI app builder dashboard.
+
+Important safety rules:
+- Do not pretend files were edited.
+- Do not overwrite source code.
+- Do not deploy anything.
+- Do not use secrets in output.
+- If code generation is needed, describe exactly what file should be generated next.
+- Safe Install must be used before installing generated pages.
+- Ask questions before database, API key, deployment, auth, payment, or private-data decisions.
+- Use Project Brain as source of truth.
+- Keep the plan practical for a solo developer using AI tools.
+
+Build mode:
+{build_mode}
+
+User task goal:
+{task_goal}
+
+Target route:
+{target_route}
+
+Selected decision report file:
+{selected_report_file.name}
+
+# PROJECT MEMORY CONTEXT
+{memory_context}
+
+# SELECTED DECISION REPORT
+{decision_report_text}
+
+Return the result in this exact structure:
+
+# Agent Task Run
+
+## 1. Run Summary
+Explain what this run will build.
+
+## 2. Agent Assignments
+- Product Manager:
+- UI/UX Designer:
+- Frontend Developer:
+- Backend Developer:
+- QA Tester:
+- Project Reviewer:
+
+## 3. Step-by-Step Execution Plan
+Give numbered steps.
+
+## 4. Files To Create Or Edit
+List exact likely files.
+
+## 5. Backend Routes Needed
+List routes if needed.
+
+## 6. Frontend Pages Or Components Needed
+List pages/components if needed.
+
+## 7. Validation Commands
+Give exact commands for Windows PowerShell.
+
+## 8. Safe Install Plan
+Explain preview, compare, approve, backup, rollback flow.
+
+## 9. Missing Information / Questions
+List anything Devendra must answer before risky work.
+
+## 10. Next Best Action
+Give the single next action to do now.
+"""
+
+        task_runner_update_status(
+            True,
+            "Frontend Developer",
+            "Calling AI model to create executable task plan.",
+            65,
+            "Agent task prompt prepared.",
+        )
+
+        client = OpenAI(
+            base_url="https://integrate.api.nvidia.com/v1",
+            api_key=nvidia_api_key,
+        )
+
+        model_name = os.getenv("MODEL", "moonshotai/kimi-k2.6")
+
+        completion = client.chat.completions.create(
+            model=model_name,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a senior AI software project manager and task runner.",
+                },
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
+            ],
+            temperature=0.2,
+            max_tokens=5000,
+        )
+
+        result = completion.choices[0].message.content or ""
+
+        task_runner_update_status(
+            True,
+            "QA Tester",
+            "Saving task run report and updating task memory.",
+            85,
+            "Task plan generated.",
+        )
+
+        AGENT_TASK_RUNS_DIR.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_file = AGENT_TASK_RUNS_DIR / f"task_run_{timestamp}.md"
+
+        report_text = f"""# Agent Task Runner Report
+
+Created: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+Source Decision Report: {selected_report_file.name}
+Build Mode: {build_mode}
+Target Route: {target_route}
+Task Goal: {task_goal}
+
+---
+
+{result}
+"""
+
+        run_file.write_text(report_text, encoding="utf-8")
+
+        runs = load_agent_task_runs()
+
+        run_item = {
+            "id": timestamp,
+            "file_name": run_file.name,
+            "file_path": str(run_file),
+            "source_report": selected_report_file.name,
+            "task_goal": task_goal,
+            "target_route": target_route,
+            "build_mode": build_mode,
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "status": "completed",
+            "preview": result[:700],
+        }
+
+        runs.insert(0, run_item)
+        runs = runs[:100]
+        save_agent_task_runs(runs)
+
+        if request.save_to_memory:
+            try:
+                append_text_file(
+                    PAGE_PLAN_MEMORY,
+                    f"""
+
+## Agent Task Runner Run - {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+Source Report: {selected_report_file.name}
+Task Goal: {task_goal}
+Target Route: {target_route}
+Build Mode: {build_mode}
+
+Saved Run File: {run_file.name}
+""",
+                )
+            except Exception:
+                pass
+
+        task_runner_update_status(
+            False,
+            "Project Reviewer",
+            "Agent Task Runner completed.",
+            100,
+            "Task run report created successfully.",
+        )
+
+        return {
+            "ok": True,
+            "message": "Agent Task Runner completed.",
+            "run": run_item,
+            "content": report_text,
+        }
+
+    except Exception as error:
+        task_runner_update_status(
+            False,
+            "Project Reviewer",
+            "Agent Task Runner failed.",
+            100,
+            "Task runner failed.",
+            str(error),
+        )
+
+        task_runner_record_error(
+            "Agent Task Runner",
+            "task-runner/start",
+            "Agent Task Runner failed.",
+            str(error),
+        )
+
+        return {
+            "ok": False,
+            "message": "Agent Task Runner failed.",
+            "error": str(error),
+        }
+
+
+
+# ============================================================
+# Dashboard Output Files Summary
+# ============================================================
+
+@app.get("/dashboard/output-files")
+def dashboard_output_files():
+    try:
+        groups = []
+
+        folders = [
+            {
+                "name": "Current Run",
+                "path": CURRENT_RUN_DIR,
+                "pattern": "*",
+            },
+            {
+                "name": "Generated Pages",
+                "path": GENERATED_PAGES_DIR,
+                "pattern": "*",
+            },
+            {
+                "name": "Generated Reports",
+                "path": GENERATED_REPORTS_DIR,
+                "pattern": "*",
+            },
+            {
+                "name": "Generated Designs",
+                "path": GENERATED_DESIGNS_DIR,
+                "pattern": "*",
+            },
+        ]
+
+        total_files = 0
+
+        for folder in folders:
+            folder_path = folder["path"]
+            folder_path.mkdir(parents=True, exist_ok=True)
+
+            files = []
+
+            for file_path in sorted(
+                folder_path.glob(folder["pattern"]),
+                key=lambda file: file.stat().st_mtime,
+                reverse=True,
+            ):
+                if file_path.is_file():
+                    files.append(
+                        {
+                            "file_name": file_path.name,
+                            "file_path": str(file_path),
+                            "size": file_path.stat().st_size,
+                            "modified": datetime.fromtimestamp(
+                                file_path.stat().st_mtime
+                            ).strftime("%Y-%m-%d %H:%M:%S"),
+                        }
+                    )
+
+            total_files += len(files)
+
+            groups.append(
+                {
+                    "name": folder["name"],
+                    "count": len(files),
+                    "files": files[:10],
+                }
+            )
+
+        return {
+            "ok": True,
+            "total_files": total_files,
+            "groups": groups,
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to load dashboard output files.",
+            "error": str(error),
+        }

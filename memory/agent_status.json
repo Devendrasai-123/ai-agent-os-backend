@@ -1,27 +1,27 @@
 {
   "ok": true,
   "is_running": false,
-  "current_agent": "Idle",
-  "current_task": "No active task.",
-  "progress": 0,
-  "last_result": "No run yet.",
-  "error": "",
-  "updated_at": "2026-06-26 10:48:24",
+  "current_agent": "Project Reviewer",
+  "current_task": "Agent Task Runner failed.",
+  "progress": 100,
+  "last_result": "Task runner failed.",
+  "error": "404 page not found",
+  "updated_at": "2026-06-26 17:16:39",
   "agents": [
     {
       "name": "Product Manager",
       "status": "idle",
-      "task": ""
+      "task": "Starting Agent Task Runner and reading selected decision report."
     },
     {
       "name": "UI/UX Designer",
       "status": "idle",
-      "task": ""
+      "task": "Reading Project Brain, Feature Registry, and selected decision report."
     },
     {
       "name": "Frontend Developer",
       "status": "idle",
-      "task": ""
+      "task": "Calling AI model to create executable task plan."
     },
     {
       "name": "Backend Developer",
@@ -35,8 +35,8 @@
     },
     {
       "name": "Project Reviewer",
-      "status": "idle",
-      "task": ""
+      "status": "done",
+      "task": "Agent Task Runner failed."
     }
   ]
 }
