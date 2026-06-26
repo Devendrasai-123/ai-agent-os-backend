@@ -5250,3 +5250,157 @@ def list_agent_workflow_reports():
             "error": str(error),
         }
 
+
+# ============================================================
+# Git Safety Guard v1
+# ============================================================
+
+import subprocess
+
+
+def run_git_safety_command(command, cwd):
+    try:
+        result = subprocess.run(
+            command,
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        return {
+            "ok": result.returncode == 0,
+            "stdout": result.stdout.strip(),
+            "stderr": result.stderr.strip(),
+            "code": result.returncode,
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "stdout": "",
+            "stderr": str(error),
+            "code": -1,
+        }
+
+
+@app.get("/git-safety/check")
+def git_safety_check():
+    try:
+        user_home = Path.home()
+        frontend_dir = user_home / "dashboard" / "frontend"
+        backend_dir = CREWAI_DIR
+
+        home_git_exists = (user_home / ".git").exists()
+
+        checks = []
+
+        checks.append(
+            {
+                "name": "Home Folder Git Check",
+                "path": str(user_home),
+                "status": "danger" if home_git_exists else "safe",
+                "message": "Danger: C:\\Users\\deven has .git. Remove it before using Git." if home_git_exists else "Safe: no accidental home Git repo found.",
+                "command": "Do not run git add . from C:\\Users\\deven",
+            }
+        )
+
+        repos = [
+            {
+                "name": "Frontend Repo",
+                "path": frontend_dir,
+                "correct_folder": str(frontend_dir),
+            },
+            {
+                "name": "Backend Repo",
+                "path": backend_dir,
+                "correct_folder": str(backend_dir),
+            },
+        ]
+
+        for repo in repos:
+            repo_path = repo["path"]
+            git_folder = repo_path / ".git"
+
+            if not repo_path.exists():
+                checks.append(
+                    {
+                        "name": repo["name"],
+                        "path": str(repo_path),
+                        "status": "danger",
+                        "message": "Folder does not exist.",
+                        "command": f"cd {repo_path}",
+                    }
+                )
+                continue
+
+            if not git_folder.exists():
+                checks.append(
+                    {
+                        "name": repo["name"],
+                        "path": str(repo_path),
+                        "status": "warning",
+                        "message": "Folder exists, but .git was not found.",
+                        "command": f"cd {repo_path}",
+                    }
+                )
+                continue
+
+            status_result = run_git_safety_command(["git", "status", "--short"], repo_path)
+            branch_result = run_git_safety_command(["git", "branch", "--show-current"], repo_path)
+            remote_result = run_git_safety_command(["git", "remote", "-v"], repo_path)
+
+            has_changes = bool(status_result.get("stdout"))
+            has_remote = bool(remote_result.get("stdout"))
+
+            if has_changes:
+                repo_status = "warning"
+                message = "Repo has uncommitted changes. Review before pushing."
+            elif not has_remote:
+                repo_status = "warning"
+                message = "Repo has no remote configured."
+            else:
+                repo_status = "safe"
+                message = "Repo looks safe."
+
+            checks.append(
+                {
+                    "name": repo["name"],
+                    "path": str(repo_path),
+                    "status": repo_status,
+                    "message": message,
+                    "branch": branch_result.get("stdout", ""),
+                    "changes": status_result.get("stdout", ""),
+                    "remote": remote_result.get("stdout", ""),
+                    "command": f"cd {repo_path}",
+                }
+            )
+
+        danger_count = len([item for item in checks if item["status"] == "danger"])
+        warning_count = len([item for item in checks if item["status"] == "warning"])
+        safe_count = len([item for item in checks if item["status"] == "safe"])
+
+        return {
+            "ok": True,
+            "safe_count": safe_count,
+            "warning_count": warning_count,
+            "danger_count": danger_count,
+            "checks": checks,
+            "rules": [
+                "Never run git add . from C:\\Users\\deven",
+                "Frontend Git folder: C:\\Users\\deven\\dashboard\\frontend",
+                "Backend Git folder: C:\\Users\\deven\\my-ai-agents\\my-ai-agents\\app_builder_crew",
+                "Never commit .env files",
+                "Run npm run build before frontend push",
+                "Run python -m py_compile dashboard\\backend\\main.py before backend push",
+            ],
+            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to run Git Safety Guard.",
+            "error": str(error),
+        }
+
