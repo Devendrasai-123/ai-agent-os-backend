@@ -5404,3 +5404,161 @@ def git_safety_check():
             "error": str(error),
         }
 
+
+# ============================================================
+# Agent File Writer v1
+# ============================================================
+
+from pydantic import BaseModel as AFWBaseModel
+from pathlib import Path as AFWPath
+from datetime import datetime as AFWDatetime
+import re as AFWRe
+import json as AFWJson
+
+AFW_BASE_DIR = AFWPath(__file__).resolve().parents[2]
+AFW_GENERATED_DIR = AFW_BASE_DIR / "generated_pages"
+AFW_MEMORY_DIR = AFW_BASE_DIR / "memory"
+AFW_LOG_FILE = AFW_MEMORY_DIR / "agent_file_writer_log.json"
+
+class AFWCreateRequest(AFWBaseModel):
+    file_name: str
+    content: str
+    description: str = ""
+    agent_name: str = "Frontend Developer"
+    file_type: str = "page"
+
+def afw_safe_file_name(file_name: str):
+    name = (file_name or "").strip().replace("\\", "/").split("/")[-1]
+    name = AFWRe.sub(r"[^a-zA-Z0-9._-]", "-", name)
+
+    if not name:
+        name = "generated-file.tsx"
+
+    allowed = [".tsx", ".ts", ".jsx", ".js", ".md", ".json", ".txt", ".py"]
+    if not any(name.endswith(ext) for ext in allowed):
+        name = name + ".tsx"
+
+    return name
+
+def afw_read_log():
+    try:
+        if AFW_LOG_FILE.exists():
+            return AFWJson.loads(AFW_LOG_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return []
+
+def afw_write_log(items):
+    AFW_MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+    AFW_LOG_FILE.write_text(AFWJson.dumps(items, indent=2), encoding="utf-8")
+
+@app.post("/agent-file-writer/create")
+def agent_file_writer_create(request: AFWCreateRequest):
+    try:
+        AFW_GENERATED_DIR.mkdir(parents=True, exist_ok=True)
+        AFW_MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+
+        safe_name = afw_safe_file_name(request.file_name)
+        target_path = AFW_GENERATED_DIR / safe_name
+
+        if target_path.exists():
+            stem = target_path.stem
+            suffix = target_path.suffix
+            timestamp = AFWDatetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_name = f"{stem}_{timestamp}{suffix}"
+            target_path = AFW_GENERATED_DIR / safe_name
+
+        target_path.write_text(request.content, encoding="utf-8")
+
+        log_items = afw_read_log()
+        log_item = {
+            "file_name": safe_name,
+            "path": str(target_path),
+            "description": request.description,
+            "agent_name": request.agent_name,
+            "file_type": request.file_type,
+            "size_bytes": target_path.stat().st_size,
+            "created_at": AFWDatetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "status": "generated"
+        }
+        log_items.insert(0, log_item)
+        afw_write_log(log_items[:200])
+
+        return {
+            "ok": True,
+            "message": "Generated file saved successfully.",
+            "file": log_item
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to create generated file.",
+            "error": str(error)
+        }
+
+@app.get("/agent-file-writer/files")
+def agent_file_writer_files():
+    try:
+        AFW_GENERATED_DIR.mkdir(parents=True, exist_ok=True)
+
+        files = []
+        for path in sorted(AFW_GENERATED_DIR.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True):
+            if path.is_file():
+                preview = ""
+                try:
+                    preview = path.read_text(encoding="utf-8")[:500]
+                except Exception:
+                    preview = ""
+
+                files.append({
+                    "file_name": path.name,
+                    "path": str(path),
+                    "size_bytes": path.stat().st_size,
+                    "updated_at": AFWDatetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+                    "preview": preview
+                })
+
+        return {
+            "ok": True,
+            "folder": str(AFW_GENERATED_DIR),
+            "count": len(files),
+            "files": files
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to list generated files.",
+            "error": str(error),
+            "files": []
+        }
+
+@app.get("/agent-file-writer/files/{file_name}")
+def agent_file_writer_read_file(file_name: str):
+    try:
+        safe_name = afw_safe_file_name(file_name)
+        target_path = AFW_GENERATED_DIR / safe_name
+
+        if not target_path.exists():
+            return {
+                "ok": False,
+                "message": "File not found.",
+                "file_name": safe_name
+            }
+
+        return {
+            "ok": True,
+            "file_name": safe_name,
+            "path": str(target_path),
+            "content": target_path.read_text(encoding="utf-8"),
+            "size_bytes": target_path.stat().st_size,
+            "updated_at": AFWDatetime.fromtimestamp(target_path.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to read generated file.",
+            "error": str(error)
+        }
