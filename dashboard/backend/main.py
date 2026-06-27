@@ -7425,3 +7425,225 @@ Review before installing into real backend.
             "message": "Backend Developer Agent failed.",
             "error": str(error)
         }
+
+# ============================================================
+# Real Agent Output v1 - QA Tester Agent
+# ============================================================
+
+from pydantic import BaseModel as QTOBaseModel
+from pathlib import Path as QTOPath
+from datetime import datetime as QTODatetime
+import json as QTOJson
+import re as QTORe
+import subprocess as QTOSubprocess
+
+QTO_BASE_DIR = QTOPath(__file__).resolve().parents[2]
+QTO_MEMORY_DIR = QTO_BASE_DIR / "memory"
+QTO_REPORTS_DIR = QTO_BASE_DIR / "generated_reports"
+QTO_OUTPUTS_FILE = QTO_MEMORY_DIR / "real_agent_outputs.json"
+
+class QTOTesterRequest(QTOBaseModel):
+    task: str
+    feature_name: str = "QA Check"
+    priority: str = "High"
+    run_frontend_build: bool = True
+    run_backend_compile: bool = True
+
+def qto_read_json(path, default):
+    try:
+        if path.exists():
+            return QTOJson.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return default
+
+def qto_write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(QTOJson.dumps(data, indent=2), encoding="utf-8")
+
+def qto_safe_name(name):
+    clean = QTORe.sub(r"[^a-zA-Z0-9._-]", "-", name.strip().lower())
+    clean = clean.strip("-")
+    if not clean:
+        clean = "qa-check"
+    return clean
+
+def qto_save_output(output):
+    outputs = qto_read_json(QTO_OUTPUTS_FILE, [])
+    outputs.insert(0, output)
+    qto_write_json(QTO_OUTPUTS_FILE, outputs[:200])
+
+def qto_run_command(command, cwd, timeout_seconds=180):
+    started_at = QTODatetime.now()
+
+    try:
+        process = QTOSubprocess.run(
+            command,
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            shell=True
+        )
+
+        finished_at = QTODatetime.now()
+
+        return {
+            "ok": process.returncode == 0,
+            "command": command,
+            "cwd": str(cwd),
+            "return_code": process.returncode,
+            "stdout": process.stdout[-12000:],
+            "stderr": process.stderr[-12000:],
+            "started_at": started_at.strftime("%Y-%m-%d %H:%M:%S"),
+            "finished_at": finished_at.strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+    except Exception as error:
+        finished_at = QTODatetime.now()
+
+        return {
+            "ok": False,
+            "command": command,
+            "cwd": str(cwd),
+            "return_code": -1,
+            "stdout": "",
+            "stderr": str(error),
+            "started_at": started_at.strftime("%Y-%m-%d %H:%M:%S"),
+            "finished_at": finished_at.strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+@app.post("/real-agents/qa-tester/run")
+def real_agents_qa_tester_run(request: QTOTesterRequest):
+    try:
+        QTO_MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+        QTO_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+        frontend_dir = QTOPath.home() / "dashboard" / "frontend"
+        backend_root = QTO_BASE_DIR
+
+        backend_result = None
+        frontend_result = None
+
+        if request.run_backend_compile:
+            backend_result = qto_run_command(
+                "python -m py_compile dashboard\\backend\\main.py",
+                backend_root,
+                timeout_seconds=90
+            )
+
+        if request.run_frontend_build:
+            frontend_result = qto_run_command(
+                "npm run build",
+                frontend_dir,
+                timeout_seconds=180
+            )
+
+        backend_ok = True if backend_result is None else backend_result.get("ok", False)
+        frontend_ok = True if frontend_result is None else frontend_result.get("ok", False)
+        all_ok = backend_ok and frontend_ok
+
+        timestamp = QTODatetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp_file = QTODatetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_feature = qto_safe_name(request.feature_name)
+
+        backend_status = "skipped"
+        if backend_result is not None:
+            backend_status = "passed" if backend_result.get("ok") else "failed"
+
+        frontend_status = "skipped"
+        if frontend_result is not None:
+            frontend_status = "passed" if frontend_result.get("ok") else "failed"
+
+        report = f"""# QA Tester Agent Report
+
+Generated at: {timestamp}
+
+## Feature Name
+{request.feature_name}
+
+## Priority
+{request.priority}
+
+## Task
+{request.task}
+
+## Overall QA Status
+{"PASSED" if all_ok else "FAILED"}
+
+## Checks Run
+- Backend compile: {backend_status}
+- Frontend build: {frontend_status}
+
+## Backend Compile Result
+Command:
+{backend_result.get("command") if backend_result else "Skipped"}
+
+Return Code:
+{backend_result.get("return_code") if backend_result else "Skipped"}
+
+STDOUT:
+{backend_result.get("stdout") if backend_result else "Skipped"}
+
+STDERR:
+{backend_result.get("stderr") if backend_result else "Skipped"}
+
+## Frontend Build Result
+Command:
+{frontend_result.get("command") if frontend_result else "Skipped"}
+
+Return Code:
+{frontend_result.get("return_code") if frontend_result else "Skipped"}
+
+STDOUT:
+{frontend_result.get("stdout") if frontend_result else "Skipped"}
+
+STDERR:
+{frontend_result.get("stderr") if frontend_result else "Skipped"}
+
+## QA Decision
+{"Approved for next step." if all_ok else "Not approved. Fix errors before install, commit, or deploy."}
+
+## Recommended Next Steps
+1. If QA passed, continue to Project Reviewer Agent.
+2. If QA failed, open QA Runner or Retry Failed page.
+3. Fix the error shown in STDERR.
+4. Run QA Tester again.
+5. Do not push broken code.
+"""
+
+        report_file = f"qa_agent_{safe_feature}_{timestamp_file}.md"
+        report_path = QTO_REPORTS_DIR / report_file
+        report_path.write_text(report, encoding="utf-8")
+
+        output = {
+            "agent_name": "QA Tester Agent",
+            "feature_name": request.feature_name,
+            "priority": request.priority,
+            "task": request.task,
+            "report_file": report_file,
+            "report_path": str(report_path),
+            "status": "passed" if all_ok else "failed",
+            "backend_status": backend_status,
+            "frontend_status": frontend_status,
+            "created_at": timestamp,
+            "summary": "QA checks completed. Backend: " + backend_status + ". Frontend: " + frontend_status + "."
+        }
+
+        qto_save_output(output)
+
+        return {
+            "ok": all_ok,
+            "message": "QA Tester Agent passed." if all_ok else "QA Tester Agent found errors.",
+            "output": output,
+            "report": report,
+            "backend": backend_result,
+            "frontend": frontend_result
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "QA Tester Agent failed to run.",
+            "error": str(error)
+        }
