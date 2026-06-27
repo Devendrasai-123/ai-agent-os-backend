@@ -7647,3 +7647,410 @@ STDERR:
             "message": "QA Tester Agent failed to run.",
             "error": str(error)
         }
+
+# ============================================================
+# Real Agent Output v1 - Project Reviewer Agent
+# ============================================================
+
+from pydantic import BaseModel as PROBaseModel
+from pathlib import Path as PROPath
+from datetime import datetime as PRODatetime
+import json as PROJson
+import re as PRORe
+
+PRO_BASE_DIR = PROPath(__file__).resolve().parents[2]
+PRO_MEMORY_DIR = PRO_BASE_DIR / "memory"
+PRO_REPORTS_DIR = PRO_BASE_DIR / "generated_reports"
+PRO_OUTPUTS_FILE = PRO_MEMORY_DIR / "real_agent_outputs.json"
+
+class PROReviewerRequest(PROBaseModel):
+    task: str
+    feature_name: str = "Project Review"
+    priority: str = "High"
+
+def pro_read_json(path, default):
+    try:
+        if path.exists():
+            return PROJson.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return default
+
+def pro_write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(PROJson.dumps(data, indent=2), encoding="utf-8")
+
+def pro_safe_name(name):
+    clean = PRORe.sub(r"[^a-zA-Z0-9._-]", "-", name.strip().lower())
+    clean = clean.strip("-")
+    if not clean:
+        clean = "project-review"
+    return clean
+
+def pro_save_output(output):
+    outputs = pro_read_json(PRO_OUTPUTS_FILE, [])
+    outputs.insert(0, output)
+    pro_write_json(PRO_OUTPUTS_FILE, outputs[:200])
+
+def pro_latest_by_agent(outputs):
+    result = {}
+    for item in outputs:
+        agent_name = item.get("agent_name", "Unknown Agent")
+        if agent_name not in result:
+            result[agent_name] = item
+    return result
+
+@app.post("/real-agents/project-reviewer/run")
+def real_agents_project_reviewer_run(request: PROReviewerRequest):
+    try:
+        PRO_MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+        PRO_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+        outputs = pro_read_json(PRO_OUTPUTS_FILE, [])
+        latest = pro_latest_by_agent(outputs)
+
+        required_agents = [
+            "Product Manager Agent",
+            "UI/UX Designer Agent",
+            "Frontend Developer Agent",
+            "Backend Developer Agent",
+            "QA Tester Agent"
+        ]
+
+        missing_agents = []
+        present_agents = []
+
+        for agent in required_agents:
+            if agent in latest:
+                present_agents.append(agent)
+            else:
+                missing_agents.append(agent)
+
+        qa_output = latest.get("QA Tester Agent")
+        qa_status = "missing"
+
+        if qa_output:
+            qa_status = qa_output.get("status", "unknown")
+
+        approved = len(missing_agents) == 0 and qa_status == "passed"
+
+        timestamp = PRODatetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp_file = PRODatetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_feature = pro_safe_name(request.feature_name)
+
+        present_text = "\n".join([f"- {agent}" for agent in present_agents]) if present_agents else "- None"
+        missing_text = "\n".join([f"- {agent}" for agent in missing_agents]) if missing_agents else "- None"
+
+        latest_text_lines = []
+        for agent_name, item in latest.items():
+            latest_text_lines.append(
+                f"""### {agent_name}
+- Feature: {item.get("feature_name", "Unknown")}
+- Status: {item.get("status", "unknown")}
+- Created At: {item.get("created_at", "unknown")}
+- Summary: {item.get("summary", "No summary")}
+- Report File: {item.get("report_file", "No report file")}
+"""
+            )
+
+        latest_text = "\n".join(latest_text_lines) if latest_text_lines else "No agent outputs found."
+
+        report = f"""# Project Reviewer Agent Report
+
+Generated at: {timestamp}
+
+## Feature Name
+{request.feature_name}
+
+## Priority
+{request.priority}
+
+## Review Task
+{request.task}
+
+## Final Decision
+{"APPROVED" if approved else "NOT APPROVED"}
+
+## Reason
+{"All required agents have produced outputs and QA passed." if approved else "Some required agent outputs are missing or QA has not passed."}
+
+## Required Agent Coverage
+
+### Present Agents
+{present_text}
+
+### Missing Agents
+{missing_text}
+
+## QA Status
+{qa_status}
+
+## Latest Agent Outputs
+{latest_text}
+
+## Reviewer Checklist
+- Product requirements exist: {"yes" if "Product Manager Agent" in latest else "no"}
+- UI/UX design exists: {"yes" if "UI/UX Designer Agent" in latest else "no"}
+- Frontend draft exists: {"yes" if "Frontend Developer Agent" in latest else "no"}
+- Backend draft exists: {"yes" if "Backend Developer Agent" in latest else "no"}
+- QA tester ran: {"yes" if "QA Tester Agent" in latest else "no"}
+- QA passed: {"yes" if qa_status == "passed" else "no"}
+
+## Recommended Next Steps
+{"1. Move to safe install or production review." if approved else "1. Run missing agents.\n2. Run QA Tester again.\n3. Fix failures before commit, install, or deploy.\n4. Run Project Reviewer again."}
+
+## Safety Decision
+Do not install or deploy unless final decision is APPROVED.
+"""
+
+        report_file = f"project_reviewer_{safe_feature}_{timestamp_file}.md"
+        report_path = PRO_REPORTS_DIR / report_file
+        report_path.write_text(report, encoding="utf-8")
+
+        output = {
+            "agent_name": "Project Reviewer Agent",
+            "feature_name": request.feature_name,
+            "priority": request.priority,
+            "task": request.task,
+            "report_file": report_file,
+            "report_path": str(report_path),
+            "status": "approved" if approved else "not_approved",
+            "qa_status": qa_status,
+            "missing_agents": missing_agents,
+            "present_agents": present_agents,
+            "created_at": timestamp,
+            "summary": "Final project review completed. Decision: " + ("APPROVED" if approved else "NOT APPROVED")
+        }
+
+        pro_save_output(output)
+
+        return {
+            "ok": True,
+            "approved": approved,
+            "message": "Project Reviewer Agent completed.",
+            "output": output,
+            "report": report
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Project Reviewer Agent failed.",
+            "error": str(error)
+        }
+
+# ============================================================
+# Real Agent Output v1 - Product Manager Agent RESTORE
+# ============================================================
+
+from pydantic import BaseModel as PMRBaseModel
+from pathlib import Path as PMRPath
+from datetime import datetime as PMRDatetime
+import json as PMRJson
+import re as PMRRe
+
+PMR_BASE_DIR = PMRPath(__file__).resolve().parents[2]
+PMR_MEMORY_DIR = PMR_BASE_DIR / "memory"
+PMR_REPORTS_DIR = PMR_BASE_DIR / "generated_reports"
+PMR_OUTPUTS_FILE = PMR_MEMORY_DIR / "real_agent_outputs.json"
+
+class PMRRequest(PMRBaseModel):
+    task: str
+    feature_name: str = "New Feature"
+    priority: str = "High"
+
+def pmr_read_text(path, default=""):
+    try:
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+    except Exception:
+        pass
+    return default
+
+def pmr_read_json(path, default):
+    try:
+        if path.exists():
+            return PMRJson.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return default
+
+def pmr_write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(PMRJson.dumps(data, indent=2), encoding="utf-8")
+
+def pmr_safe_name(name):
+    clean = PMRRe.sub(r"[^a-zA-Z0-9._-]", "-", name.strip().lower())
+    clean = clean.strip("-")
+    if not clean:
+        clean = "pm-report"
+    return clean
+
+def pmr_save_output(output):
+    outputs = pmr_read_json(PMR_OUTPUTS_FILE, [])
+    outputs.insert(0, output)
+    pmr_write_json(PMR_OUTPUTS_FILE, outputs[:200])
+
+@app.post("/real-agents/product-manager/run")
+def real_agents_product_manager_restore_run(request: PMRRequest):
+    try:
+        PMR_MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+        PMR_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+        project_brain = pmr_read_text(PMR_MEMORY_DIR / "project_brain.md", "Project Brain not found yet.")
+        timestamp = PMRDatetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp_file = PMRDatetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_feature = pmr_safe_name(request.feature_name)
+
+        report = f"""# Product Manager Agent Report
+
+Generated at: {timestamp}
+
+## Feature Name
+{request.feature_name}
+
+## Priority
+{request.priority}
+
+## User Request
+{request.task}
+
+## Product Goal
+Build this feature in a safe, testable, dashboard-first way.
+
+## Project Brain Context
+{project_brain[:2500]}
+
+## Functional Requirements
+1. The feature must be visible from the dashboard.
+2. The feature must have backend routes if it needs data or actions.
+3. The feature must save useful history or reports when needed.
+4. The feature must show clear success and failure messages.
+5. The feature must be testable before Git push.
+
+## Safety Requirements
+1. Never expose .env or secret keys.
+2. Never delete real project files without approval.
+3. Never overwrite important files without backup.
+4. High-risk actions must require approval.
+5. Backend must pass python compile.
+6. Frontend must pass npm build.
+
+## Acceptance Criteria
+- User can open the feature from sidebar.
+- User can perform the main action.
+- Result/output is clearly shown.
+- Errors are readable.
+- Backend compile passes.
+- Frontend build passes.
+
+## Suggested Build Steps
+1. Add backend routes.
+2. Add frontend page.
+3. Add sidebar link.
+4. Test in browser.
+5. Run backend compile.
+6. Run frontend build.
+7. Commit and push safely.
+
+## PM Decision
+Approved for staged build with safety gates.
+"""
+
+        report_file = f"pm_agent_{safe_feature}_{timestamp_file}.md"
+        report_path = PMR_REPORTS_DIR / report_file
+        report_path.write_text(report, encoding="utf-8")
+
+        output = {
+            "agent_name": "Product Manager Agent",
+            "feature_name": request.feature_name,
+            "priority": request.priority,
+            "task": request.task,
+            "report_file": report_file,
+            "report_path": str(report_path),
+            "status": "completed",
+            "created_at": timestamp,
+            "summary": "Product requirements, safety rules, acceptance criteria, and build steps created."
+        }
+
+        pmr_save_output(output)
+
+        return {
+            "ok": True,
+            "message": "Product Manager Agent completed report.",
+            "output": output,
+            "report": report
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Product Manager Agent failed.",
+            "error": str(error)
+        }
+
+# ============================================================
+# Real Agent Shared Routes RESTORE
+# ============================================================
+
+from pathlib import Path as RSRPath
+import json as RSRJson
+import re as RSRRe
+
+RSR_BASE_DIR = RSRPath(__file__).resolve().parents[2]
+RSR_MEMORY_DIR = RSR_BASE_DIR / "memory"
+RSR_REPORTS_DIR = RSR_BASE_DIR / "generated_reports"
+RSR_OUTPUTS_FILE = RSR_MEMORY_DIR / "real_agent_outputs.json"
+
+def rsr_read_json(path, default):
+    try:
+        if path.exists():
+            return RSRJson.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return default
+
+@app.get("/real-agents/outputs")
+def real_agents_outputs_restore():
+    try:
+        outputs = rsr_read_json(RSR_OUTPUTS_FILE, [])
+        return {
+            "ok": True,
+            "outputs": outputs
+        }
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to read real agent outputs.",
+            "error": str(error),
+            "outputs": []
+        }
+
+@app.get("/real-agents/reports/{file_name}")
+def real_agents_read_report_restore(file_name: str):
+    try:
+        safe_name = file_name.strip().replace("\\", "/").split("/")[-1]
+        safe_name = RSRRe.sub(r"[^a-zA-Z0-9._-]", "-", safe_name)
+
+        report_path = RSR_REPORTS_DIR / safe_name
+
+        if not report_path.exists():
+            return {
+                "ok": False,
+                "message": "Report file not found.",
+                "file_name": safe_name
+            }
+
+        return {
+            "ok": True,
+            "file_name": safe_name,
+            "content": report_path.read_text(encoding="utf-8"),
+            "path": str(report_path)
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to read report.",
+            "error": str(error)
+        }
