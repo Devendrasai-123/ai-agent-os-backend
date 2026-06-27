@@ -5715,3 +5715,210 @@ def generated_file_library_stats():
             "message": "Failed to read generated file stats.",
             "error": str(error)
         }
+
+# ============================================================
+# Generated File -> Safe Install Bridge v1
+# ============================================================
+
+from pydantic import BaseModel as GFSIBaseModel
+from pathlib import Path as GFSIPath
+from datetime import datetime as GFSIDatetime
+import re as GFSIRe
+import json as GFSIJson
+import difflib as GFSIDiffLib
+import shutil as GFSIShutil
+
+GFSI_BASE_DIR = GFSIPath(__file__).resolve().parents[2]
+GFSI_GENERATED_DIR = GFSI_BASE_DIR / "generated_pages"
+GFSI_MEMORY_DIR = GFSI_BASE_DIR / "memory"
+GFSI_BACKUP_DIR = GFSI_BASE_DIR / "backups" / "generated_safe_installs"
+GFSI_INSTALL_LOG = GFSI_MEMORY_DIR / "generated_safe_install_log.json"
+
+class GFSIPreviewRequest(GFSIBaseModel):
+    file_name: str
+    route_path: str = "generated-page"
+
+class GFSIApproveRequest(GFSIBaseModel):
+    file_name: str
+    route_path: str = "generated-page"
+    approval: str = ""
+
+def gfsi_safe_file_name(file_name: str):
+    name = (file_name or "").strip().replace("\\", "/").split("/")[-1]
+    name = GFSIRe.sub(r"[^a-zA-Z0-9._-]", "-", name)
+    return name
+
+def gfsi_safe_route_path(route_path: str):
+    route = (route_path or "").strip().replace("\\", "/").strip("/")
+    route = GFSIRe.sub(r"[^a-zA-Z0-9/_-]", "-", route)
+    route = route.strip("/")
+    if not route:
+        route = "generated-page"
+    return route
+
+def gfsi_frontend_page_path(route_path: str):
+    safe_route = gfsi_safe_route_path(route_path)
+    frontend_dir = GFSIPath.home() / "dashboard" / "frontend"
+    target_dir = frontend_dir / "app" / safe_route
+    target_path = target_dir / "page.tsx"
+    return frontend_dir, safe_route, target_dir, target_path
+
+def gfsi_read_install_log():
+    try:
+        if GFSI_INSTALL_LOG.exists():
+            return GFSIJson.loads(GFSI_INSTALL_LOG.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return []
+
+def gfsi_write_install_log(items):
+    GFSI_MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+    GFSI_INSTALL_LOG.write_text(GFSIJson.dumps(items, indent=2), encoding="utf-8")
+
+@app.post("/generated-files/safe-install-preview")
+def generated_files_safe_install_preview(request: GFSIPreviewRequest):
+    try:
+        safe_file = gfsi_safe_file_name(request.file_name)
+        source_path = GFSI_GENERATED_DIR / safe_file
+
+        if not source_path.exists():
+            return {
+                "ok": False,
+                "message": "Generated file not found.",
+                "file_name": safe_file
+            }
+
+        frontend_dir, safe_route, target_dir, target_path = gfsi_frontend_page_path(request.route_path)
+
+        new_content = source_path.read_text(encoding="utf-8")
+        old_content = ""
+        target_exists = target_path.exists()
+
+        if target_exists:
+            old_content = target_path.read_text(encoding="utf-8")
+
+        diff = list(GFSIDiffLib.unified_diff(
+            old_content.splitlines(),
+            new_content.splitlines(),
+            fromfile=f"old: app/{safe_route}/page.tsx",
+            tofile=f"new: generated_pages/{safe_file}",
+            lineterm=""
+        ))
+
+        return {
+            "ok": True,
+            "message": "Safe install preview ready.",
+            "source_file": safe_file,
+            "source_path": str(source_path),
+            "route_path": safe_route,
+            "target_path": str(target_path),
+            "target_exists": target_exists,
+            "old_content": old_content,
+            "new_content": new_content,
+            "diff": diff[:800],
+            "approval_text": "APPROVE INSTALL",
+            "warning": "This will write into the frontend app folder only after approval.",
+            "created_at": GFSIDatetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Safe install preview failed.",
+            "error": str(error)
+        }
+
+@app.post("/generated-files/safe-install-approve")
+def generated_files_safe_install_approve(request: GFSIApproveRequest):
+    try:
+        if request.approval.strip() != "APPROVE INSTALL":
+            return {
+                "ok": False,
+                "message": "Approval text must be exactly: APPROVE INSTALL"
+            }
+
+        safe_file = gfsi_safe_file_name(request.file_name)
+        source_path = GFSI_GENERATED_DIR / safe_file
+
+        if not source_path.exists():
+            return {
+                "ok": False,
+                "message": "Generated file not found.",
+                "file_name": safe_file
+            }
+
+        frontend_dir, safe_route, target_dir, target_path = gfsi_frontend_page_path(request.route_path)
+
+        if not frontend_dir.exists():
+            return {
+                "ok": False,
+                "message": "Frontend folder not found.",
+                "frontend_dir": str(frontend_dir)
+            }
+
+        new_content = source_path.read_text(encoding="utf-8")
+
+        timestamp = GFSIDatetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_folder = GFSI_BACKUP_DIR / timestamp
+        backup_folder.mkdir(parents=True, exist_ok=True)
+
+        backup_info = {
+            "backup_created": False,
+            "backup_path": "",
+            "target_existed": target_path.exists()
+        }
+
+        if target_path.exists():
+            backup_file = backup_folder / f"{safe_route.replace('/', '__')}__page.tsx.bak"
+            backup_file.parent.mkdir(parents=True, exist_ok=True)
+            GFSIShutil.copy2(target_path, backup_file)
+            backup_info = {
+                "backup_created": True,
+                "backup_path": str(backup_file),
+                "target_existed": True
+            }
+
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_path.write_text(new_content, encoding="utf-8")
+
+        log_items = gfsi_read_install_log()
+        log_item = {
+            "source_file": safe_file,
+            "source_path": str(source_path),
+            "route_path": safe_route,
+            "target_path": str(target_path),
+            "backup": backup_info,
+            "installed_at": GFSIDatetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "status": "installed"
+        }
+        log_items.insert(0, log_item)
+        gfsi_write_install_log(log_items[:200])
+
+        return {
+            "ok": True,
+            "message": "Generated file installed safely.",
+            "install": log_item,
+            "open_url": f"http://localhost:3000/{safe_route}"
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Safe install failed.",
+            "error": str(error)
+        }
+
+@app.get("/generated-files/safe-install-history")
+def generated_files_safe_install_history():
+    try:
+        return {
+            "ok": True,
+            "history": gfsi_read_install_log()
+        }
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to read safe install history.",
+            "error": str(error),
+            "history": []
+        }
