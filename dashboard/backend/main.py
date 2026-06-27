@@ -6726,3 +6726,506 @@ def agent_tool_permissions_reset():
             "message": "Failed to reset permissions.",
             "error": str(error)
         }
+
+# ============================================================
+# Real Agent Output v1 - UI/UX Designer Agent
+# ============================================================
+
+from pydantic import BaseModel as UXOBaseModel
+from pathlib import Path as UXOPath
+from datetime import datetime as UXODatetime
+import json as UXOJson
+import re as UXORe
+
+UXO_BASE_DIR = UXOPath(__file__).resolve().parents[2]
+UXO_MEMORY_DIR = UXO_BASE_DIR / "memory"
+UXO_REPORTS_DIR = UXO_BASE_DIR / "generated_reports"
+UXO_OUTPUTS_FILE = UXO_MEMORY_DIR / "real_agent_outputs.json"
+
+class UXODesignerRequest(UXOBaseModel):
+    task: str
+    feature_name: str = "New Feature"
+    style: str = "Dark AI dashboard"
+    priority: str = "High"
+
+def uxo_read_text(path, default=""):
+    try:
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+    except Exception:
+        pass
+    return default
+
+def uxo_read_json(path, default):
+    try:
+        if path.exists():
+            return UXOJson.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return default
+
+def uxo_write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(UXOJson.dumps(data, indent=2), encoding="utf-8")
+
+def uxo_safe_file_name(name):
+    clean = UXORe.sub(r"[^a-zA-Z0-9._-]", "-", name.strip().lower())
+    clean = clean.strip("-")
+    if not clean:
+        clean = "ux-report"
+    return clean
+
+def uxo_save_output(output):
+    outputs = uxo_read_json(UXO_OUTPUTS_FILE, [])
+    outputs.insert(0, output)
+    uxo_write_json(UXO_OUTPUTS_FILE, outputs[:200])
+
+def uxo_designer_report(task, feature_name, style, priority):
+    project_brain = uxo_read_text(UXO_MEMORY_DIR / "project_brain.md", "Project Brain not found yet.")
+    timestamp = UXODatetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    report = f"""# UI/UX Designer Agent Report
+
+Generated at: {timestamp}
+
+## Feature Name
+{feature_name}
+
+## Priority
+{priority}
+
+## Requested Style
+{style}
+
+## User Request
+{task}
+
+## Design Goal
+Design a clean, powerful, dashboard-first interface for this feature. The UI should feel like a serious AI Agent OS control room: dark, clear, safe, and easy to operate.
+
+## Project Brain Context
+{project_brain[:2500]}
+
+## Page Purpose
+This page should help the user complete the feature's main action without confusion. It should clearly show:
+1. What the feature does.
+2. What input the user must provide.
+3. What action buttons are available.
+4. What output/result is produced.
+5. What history/logs are saved.
+6. Whether the action is safe, risky, or requires approval.
+
+## Recommended Layout
+
+### 1. Hero/Header Section
+- Small label: feature category, for example AGENT TOOL / QA / SAFE INSTALL / REAL AGENT.
+- Main title: clear feature name.
+- Subtitle: one-sentence explanation.
+- Optional status badge: v1, safe, beta, approval required.
+
+### 2. Summary Cards
+Use 3-4 cards depending on the feature:
+- Total runs / files / reports / tools
+- Passed / completed count
+- Failed / blocked count
+- Latest output or latest action
+
+### 3. Main Action Panel
+This is where the user performs the main task.
+- Input field or textarea if needed.
+- Dropdowns for priority/type/status if needed.
+- Primary action button with strong label.
+- Disable button while running.
+- Show clear loading text.
+
+### 4. Output Panel
+Show result/output clearly:
+- Report preview
+- Code preview
+- Error output
+- Diff preview
+- JSON/log preview if needed
+
+### 5. History Panel
+Show last outputs/runs:
+- Time
+- Agent name
+- Status
+- File/report name
+- Click to open previous output
+
+### 6. Safety Panel
+For risky features, show:
+- What will happen
+- Which files may change
+- Whether backup is created
+- Approval text if required
+
+## Component Plan
+
+### Cards
+Use rounded dark cards with border:
+- Background: #0b1020
+- Border: #263044
+- Text: white
+- Secondary text: #94a3b8
+
+### Status Colors
+- Success: #86efac
+- Warning/approval: #facc15
+- Error/blocked: #fca5a5
+- Info: #38bdf8
+
+### Buttons
+- Primary action: blue background
+- Dangerous action: red/dark red
+- Secondary action: neutral dark
+- Disabled action: grey/dim
+
+### Code/Report Preview
+Use a pre block:
+- Background: #020617
+- Border: #263044
+- Font size: 12px
+- White-space: pre-wrap
+- Max height with scroll for long output
+
+## Mobile Layout
+On desktop:
+- Left column: controls/history
+- Right column: output/preview
+
+On mobile:
+- Stack everything vertically
+- Summary cards become one column
+- Buttons wrap
+- Preview panel should scroll
+
+## Empty States
+If no data exists:
+- "No outputs yet."
+- "Run this agent to create the first report."
+- "No failed steps found. Good."
+
+## Error States
+If backend is not running:
+- Show: "Backend not running or route not available."
+If action fails:
+- Show the backend message.
+If no file/report exists:
+- Show clear file-not-found message.
+
+## Acceptance Criteria
+- User understands the feature in under 5 seconds.
+- Main action is visible without scrolling too much.
+- Output appears clearly after action.
+- History is available.
+- Error message is readable.
+- UI follows the same dark dashboard system.
+- Mobile view does not break.
+- Buttons have clear purpose.
+
+## UI/UX Decision
+Approved for implementation with dashboard dark theme, clear action-first layout, summary cards, history panel, and safe error handling.
+"""
+
+    return report
+
+@app.post("/real-agents/ui-ux/run")
+def real_agents_ui_ux_run(request: UXODesignerRequest):
+    try:
+        UXO_MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+        UXO_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+        report = uxo_designer_report(
+            task=request.task,
+            feature_name=request.feature_name,
+            style=request.style,
+            priority=request.priority
+        )
+
+        timestamp_file = UXODatetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_feature = uxo_safe_file_name(request.feature_name)
+        file_name = f"uiux_agent_{safe_feature}_{timestamp_file}.md"
+        report_path = UXO_REPORTS_DIR / file_name
+        report_path.write_text(report, encoding="utf-8")
+
+        output = {
+            "agent_name": "UI/UX Designer Agent",
+            "feature_name": request.feature_name,
+            "priority": request.priority,
+            "task": request.task,
+            "report_file": file_name,
+            "report_path": str(report_path),
+            "status": "completed",
+            "created_at": UXODatetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "summary": "UI layout, dashboard sections, mobile behavior, cards, buttons, and error states created."
+        }
+
+        uxo_save_output(output)
+
+        return {
+            "ok": True,
+            "message": "UI/UX Designer Agent completed report.",
+            "output": output,
+            "report": report
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "UI/UX Designer Agent failed.",
+            "error": str(error)
+        }
+
+# ============================================================
+# Real Agent Output v1 - Frontend Developer Agent
+# ============================================================
+
+from pydantic import BaseModel as FDOBaseModel
+from pathlib import Path as FDOPath
+from datetime import datetime as FDODatetime
+import json as FDOJson
+import re as FDORe
+
+FDO_BASE_DIR = FDOPath(__file__).resolve().parents[2]
+FDO_MEMORY_DIR = FDO_BASE_DIR / "memory"
+FDO_REPORTS_DIR = FDO_BASE_DIR / "generated_reports"
+FDO_GENERATED_DIR = FDO_BASE_DIR / "generated_pages"
+FDO_OUTPUTS_FILE = FDO_MEMORY_DIR / "real_agent_outputs.json"
+
+class FDOFrontendRequest(FDOBaseModel):
+    task: str
+    feature_name: str = "Generated Feature"
+    route_name: str = "generated-feature"
+    priority: str = "High"
+    style: str = "Dark AI dashboard"
+
+def fdo_read_text(path, default=""):
+    try:
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+    except Exception:
+        pass
+    return default
+
+def fdo_read_json(path, default):
+    try:
+        if path.exists():
+            return FDOJson.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return default
+
+def fdo_write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(FDOJson.dumps(data, indent=2), encoding="utf-8")
+
+def fdo_safe_name(name):
+    clean = FDORe.sub(r"[^a-zA-Z0-9._-]", "-", name.strip().lower())
+    clean = clean.strip("-")
+    if not clean:
+        clean = "generated-feature"
+    return clean
+
+def fdo_save_output(output):
+    outputs = fdo_read_json(FDO_OUTPUTS_FILE, [])
+    outputs.insert(0, output)
+    fdo_write_json(FDO_OUTPUTS_FILE, outputs[:200])
+
+def fdo_component_name(feature_name):
+    words = FDORe.sub(r"[^a-zA-Z0-9 ]", " ", feature_name).title().split()
+    name = "".join(words)
+    if not name:
+        name = "GeneratedFeature"
+    if name[0].isdigit():
+        name = "Generated" + name
+    return name + "Page"
+
+def fdo_generate_page_code(task, feature_name, style):
+    component = fdo_component_name(feature_name)
+    safe_title = feature_name.replace("`", "'")
+    safe_task = task.replace("`", "'")
+    safe_style = style.replace("`", "'")
+
+    code = f'''\"use client\";
+
+import {{ useState }} from "react";
+
+export default function {component}() {{
+  const [message, setMessage] = useState("");
+
+  function runDemoAction() {{
+    setMessage("Demo action completed. This page was generated by Frontend Developer Agent v1.");
+  }}
+
+  return (
+    <main style={{{{ minHeight: "100vh", background: "#050816", color: "white", padding: "32px" }}}}>
+      <section style={{{{ border: "1px solid #263044", borderRadius: "24px", padding: "24px", marginBottom: "24px" }}}}>
+        <p style={{{{ color: "#38bdf8", fontWeight: 800, letterSpacing: "2px", fontSize: "12px" }}}}>
+          GENERATED FRONTEND PAGE
+        </p>
+
+        <h1 style={{{{ fontSize: "32px", fontWeight: 900, marginTop: "8px" }}}}>
+          {safe_title}
+        </h1>
+
+        <p style={{{{ color: "#94a3b8", marginTop: "8px" }}}}>
+          {safe_task}
+        </p>
+
+        <p style={{{{ color: "#64748b", marginTop: "8px", fontSize: "12px" }}}}>
+          Style: {safe_style}
+        </p>
+      </section>
+
+      {{message && (
+        <section style={{{{ border: "1px solid #14532d", borderRadius: "16px", padding: "16px", marginBottom: "24px", color: "#86efac" }}}}>
+          {{message}}
+        </section>
+      )}}
+
+      <section style={{{{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginBottom: "24px" }}}}>
+        <div style={{{{ border: "1px solid #263044", borderRadius: "18px", padding: "18px", background: "#0b1020" }}}}>
+          <p style={{{{ color: "#94a3b8" }}}}>Status</p>
+          <h2 style={{{{ fontSize: "28px", fontWeight: 900, color: "#86efac" }}}}>Ready</h2>
+        </div>
+
+        <div style={{{{ border: "1px solid #263044", borderRadius: "18px", padding: "18px", background: "#0b1020" }}}}>
+          <p style={{{{ color: "#94a3b8" }}}}>Risk</p>
+          <h2 style={{{{ fontSize: "28px", fontWeight: 900, color: "#facc15" }}}}>Review</h2>
+        </div>
+
+        <div style={{{{ border: "1px solid #263044", borderRadius: "18px", padding: "18px", background: "#0b1020" }}}}>
+          <p style={{{{ color: "#94a3b8" }}}}>Agent</p>
+          <h2 style={{{{ fontSize: "20px", fontWeight: 900 }}}}>Frontend Dev</h2>
+        </div>
+      </section>
+
+      <section style={{{{ display: "grid", gridTemplateColumns: "420px 1fr", gap: "24px" }}}}>
+        <div style={{{{ border: "1px solid #263044", borderRadius: "20px", padding: "20px", background: "#0b1020" }}}}>
+          <h2 style={{{{ fontSize: "22px", fontWeight: 800 }}}}>Main Action</h2>
+
+          <p style={{{{ color: "#94a3b8", marginTop: "8px" }}}}>
+            This is a starter generated page. Connect real backend routes and data in the next version.
+          </p>
+
+          <button
+            onClick={{runDemoAction}}
+            style={{{{ marginTop: "16px", padding: "12px 16px", borderRadius: "10px", fontWeight: 900, background: "#1e3a8a", color: "white", border: "1px solid #60a5fa" }}}}
+          >
+            Run Demo Action
+          </button>
+        </div>
+
+        <div style={{{{ border: "1px solid #263044", borderRadius: "20px", padding: "20px", background: "#0b1020" }}}}>
+          <h2 style={{{{ fontSize: "22px", fontWeight: 800 }}}}>Implementation Notes</h2>
+
+          <ul style={{{{ color: "#cbd5e1", marginTop: "12px", lineHeight: "28px" }}}}>
+            <li>Generated by Frontend Developer Agent v1.</li>
+            <li>Safe to preview before install.</li>
+            <li>Use Generated Files page to inspect this file.</li>
+            <li>Use Safe Install Bridge to create the real route.</li>
+            <li>Run QA Runner after install.</li>
+          </ul>
+        </div>
+      </section>
+    </main>
+  );
+}}
+'''
+    return code
+
+@app.post("/real-agents/frontend-developer/run")
+def real_agents_frontend_developer_run(request: FDOFrontendRequest):
+    try:
+        FDO_MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+        FDO_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        FDO_GENERATED_DIR.mkdir(parents=True, exist_ok=True)
+
+        code = fdo_generate_page_code(
+            task=request.task,
+            feature_name=request.feature_name,
+            style=request.style
+        )
+
+        timestamp_file = FDODatetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_feature = fdo_safe_name(request.feature_name)
+        safe_route = fdo_safe_name(request.route_name)
+
+        generated_file_name = f"{safe_route}_{timestamp_file}.tsx"
+        generated_path = FDO_GENERATED_DIR / generated_file_name
+        generated_path.write_text(code, encoding="utf-8")
+
+        report = f"""# Frontend Developer Agent Report
+
+Generated at: {FDODatetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+## Feature Name
+{request.feature_name}
+
+## Route Name
+{request.route_name}
+
+## Priority
+{request.priority}
+
+## Task
+{request.task}
+
+## Generated File
+{generated_file_name}
+
+## Generated File Path
+{generated_path}
+
+## What Was Created
+A Next.js client page component was generated and saved into generated_pages.
+
+## Next Steps
+1. Open Generated Files page.
+2. Select this file: {generated_file_name}
+3. Preview the code.
+4. Create Safe Install preview.
+5. Approve install to route: {safe_route}
+6. Run QA Runner full check.
+
+## Safety
+This agent only writes to generated_pages. It does not overwrite real frontend app files directly.
+"""
+
+        report_file = f"frontend_agent_{safe_feature}_{timestamp_file}.md"
+        report_path = FDO_REPORTS_DIR / report_file
+        report_path.write_text(report, encoding="utf-8")
+
+        output = {
+            "agent_name": "Frontend Developer Agent",
+            "feature_name": request.feature_name,
+            "priority": request.priority,
+            "task": request.task,
+            "route_name": request.route_name,
+            "generated_file": generated_file_name,
+            "generated_path": str(generated_path),
+            "report_file": report_file,
+            "report_path": str(report_path),
+            "status": "completed",
+            "created_at": FDODatetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "summary": "Frontend TSX page generated and saved into generated_pages."
+        }
+
+        fdo_save_output(output)
+
+        return {
+            "ok": True,
+            "message": "Frontend Developer Agent generated a TSX file.",
+            "output": output,
+            "report": report,
+            "code": code
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Frontend Developer Agent failed.",
+            "error": str(error)
+        }
