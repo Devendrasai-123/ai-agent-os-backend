@@ -5922,3 +5922,187 @@ def generated_files_safe_install_history():
             "error": str(error),
             "history": []
         }
+
+# ============================================================
+# QA Runner v1
+# ============================================================
+
+from pathlib import Path as QARPath
+from datetime import datetime as QARDatetime
+import subprocess as QARSubprocess
+import json as QARJson
+
+QAR_BASE_DIR = QARPath(__file__).resolve().parents[2]
+QAR_MEMORY_DIR = QAR_BASE_DIR / "memory"
+QAR_HISTORY_FILE = QAR_MEMORY_DIR / "qa_runner_history.json"
+
+def qar_read_history():
+    try:
+        if QAR_HISTORY_FILE.exists():
+            return QARJson.loads(QAR_HISTORY_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return []
+
+def qar_write_history(items):
+    QAR_MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+    QAR_HISTORY_FILE.write_text(QARJson.dumps(items, indent=2), encoding="utf-8")
+
+def qar_save_result(result):
+    items = qar_read_history()
+    items.insert(0, result)
+    qar_write_history(items[:100])
+
+def qar_run_command(command, cwd, timeout_seconds=120):
+    started_at = QARDatetime.now()
+
+    try:
+        process = QARSubprocess.run(
+            command,
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            shell=True
+        )
+
+        finished_at = QARDatetime.now()
+
+        return {
+            "ok": process.returncode == 0,
+            "command": command,
+            "cwd": str(cwd),
+            "return_code": process.returncode,
+            "stdout": process.stdout[-12000:],
+            "stderr": process.stderr[-12000:],
+            "started_at": started_at.strftime("%Y-%m-%d %H:%M:%S"),
+            "finished_at": finished_at.strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+    except Exception as error:
+        finished_at = QARDatetime.now()
+
+        return {
+            "ok": False,
+            "command": command,
+            "cwd": str(cwd),
+            "return_code": -1,
+            "stdout": "",
+            "stderr": str(error),
+            "started_at": started_at.strftime("%Y-%m-%d %H:%M:%S"),
+            "finished_at": finished_at.strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+@app.post("/qa-runner/frontend-build")
+def qa_runner_frontend_build():
+    frontend_dir = QARPath.home() / "dashboard" / "frontend"
+
+    result = qar_run_command(
+        "npm run build",
+        frontend_dir,
+        timeout_seconds=180
+    )
+
+    result["type"] = "frontend_build"
+    result["title"] = "Frontend Build"
+    result["status"] = "passed" if result["ok"] else "failed"
+
+    qar_save_result(result)
+
+    return {
+        "ok": result["ok"],
+        "message": "Frontend build passed." if result["ok"] else "Frontend build failed.",
+        "result": result
+    }
+
+@app.post("/qa-runner/backend-compile")
+def qa_runner_backend_compile():
+    backend_root = QAR_BASE_DIR
+
+    result = qar_run_command(
+        "python -m py_compile dashboard\\backend\\main.py",
+        backend_root,
+        timeout_seconds=90
+    )
+
+    result["type"] = "backend_compile"
+    result["title"] = "Backend Compile"
+    result["status"] = "passed" if result["ok"] else "failed"
+
+    qar_save_result(result)
+
+    return {
+        "ok": result["ok"],
+        "message": "Backend compile passed." if result["ok"] else "Backend compile failed.",
+        "result": result
+    }
+
+@app.post("/qa-runner/full-check")
+def qa_runner_full_check():
+    backend_root = QAR_BASE_DIR
+    frontend_dir = QARPath.home() / "dashboard" / "frontend"
+
+    backend_result = qar_run_command(
+        "python -m py_compile dashboard\\backend\\main.py",
+        backend_root,
+        timeout_seconds=90
+    )
+
+    backend_result["type"] = "backend_compile"
+    backend_result["title"] = "Backend Compile"
+    backend_result["status"] = "passed" if backend_result["ok"] else "failed"
+    qar_save_result(backend_result)
+
+    frontend_result = qar_run_command(
+        "npm run build",
+        frontend_dir,
+        timeout_seconds=180
+    )
+
+    frontend_result["type"] = "frontend_build"
+    frontend_result["title"] = "Frontend Build"
+    frontend_result["status"] = "passed" if frontend_result["ok"] else "failed"
+    qar_save_result(frontend_result)
+
+    all_ok = backend_result["ok"] and frontend_result["ok"]
+
+    summary = {
+        "type": "full_check",
+        "title": "Full QA Check",
+        "status": "passed" if all_ok else "failed",
+        "ok": all_ok,
+        "backend_ok": backend_result["ok"],
+        "frontend_ok": frontend_result["ok"],
+        "started_at": backend_result["started_at"],
+        "finished_at": frontend_result["finished_at"],
+        "command": "backend compile + frontend build",
+        "cwd": str(QAR_BASE_DIR),
+        "return_code": 0 if all_ok else 1,
+        "stdout": "Full QA check completed.",
+        "stderr": "" if all_ok else "One or more checks failed."
+    }
+
+    qar_save_result(summary)
+
+    return {
+        "ok": all_ok,
+        "message": "Full QA check passed." if all_ok else "Full QA check failed.",
+        "backend": backend_result,
+        "frontend": frontend_result,
+        "summary": summary
+    }
+
+@app.get("/qa-runner/history")
+def qa_runner_history():
+    try:
+        return {
+            "ok": True,
+            "history": qar_read_history()
+        }
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to read QA history.",
+            "error": str(error),
+            "history": []
+        }
