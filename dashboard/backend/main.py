@@ -6106,3 +6106,223 @@ def qa_runner_history():
             "error": str(error),
             "history": []
         }
+
+# ============================================================
+# Retry Failed Step v1
+# ============================================================
+
+from pathlib import Path as RFSPath
+from datetime import datetime as RFSDatetime
+import subprocess as RFSSubprocess
+import json as RFSJson
+
+RFS_BASE_DIR = RFSPath(__file__).resolve().parents[2]
+RFS_MEMORY_DIR = RFS_BASE_DIR / "memory"
+RFS_QA_HISTORY_FILE = RFS_MEMORY_DIR / "qa_runner_history.json"
+RFS_RETRY_HISTORY_FILE = RFS_MEMORY_DIR / "retry_failed_history.json"
+
+def rfs_read_json(path, default):
+    try:
+        if path.exists():
+            return RFSJson.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return default
+
+def rfs_write_json(path, data):
+    RFS_MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+    path.write_text(RFSJson.dumps(data, indent=2), encoding="utf-8")
+
+def rfs_find_latest_failed():
+    history = rfs_read_json(RFS_QA_HISTORY_FILE, [])
+
+    for item in history:
+        if item.get("status") == "failed" or item.get("ok") is False:
+            return item
+
+    return None
+
+def rfs_run_command(command, cwd, timeout_seconds=180):
+    started_at = RFSDatetime.now()
+
+    try:
+        process = RFSSubprocess.run(
+            command,
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            shell=True
+        )
+
+        finished_at = RFSDatetime.now()
+
+        return {
+            "ok": process.returncode == 0,
+            "command": command,
+            "cwd": str(cwd),
+            "return_code": process.returncode,
+            "stdout": process.stdout[-12000:],
+            "stderr": process.stderr[-12000:],
+            "started_at": started_at.strftime("%Y-%m-%d %H:%M:%S"),
+            "finished_at": finished_at.strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+    except Exception as error:
+        finished_at = RFSDatetime.now()
+
+        return {
+            "ok": False,
+            "command": command,
+            "cwd": str(cwd),
+            "return_code": -1,
+            "stdout": "",
+            "stderr": str(error),
+            "started_at": started_at.strftime("%Y-%m-%d %H:%M:%S"),
+            "finished_at": finished_at.strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+def rfs_save_retry(item):
+    history = rfs_read_json(RFS_RETRY_HISTORY_FILE, [])
+    history.insert(0, item)
+    rfs_write_json(RFS_RETRY_HISTORY_FILE, history[:100])
+
+def rfs_save_qa(item):
+    history = rfs_read_json(RFS_QA_HISTORY_FILE, [])
+    history.insert(0, item)
+    rfs_write_json(RFS_QA_HISTORY_FILE, history[:100])
+
+@app.get("/retry-failed/latest")
+def retry_failed_latest():
+    try:
+        latest = rfs_find_latest_failed()
+        retry_history = rfs_read_json(RFS_RETRY_HISTORY_FILE, [])
+
+        return {
+            "ok": True,
+            "latest_failed": latest,
+            "retry_history": retry_history
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to read latest failed step.",
+            "error": str(error),
+            "latest_failed": None,
+            "retry_history": []
+        }
+
+@app.post("/retry-failed/retry-latest")
+def retry_failed_retry_latest():
+    try:
+        latest = rfs_find_latest_failed()
+
+        if not latest:
+            return {
+                "ok": False,
+                "message": "No failed QA step found to retry."
+            }
+
+        step_type = latest.get("type", "")
+        title = latest.get("title", "Failed Step")
+
+        backend_root = RFS_BASE_DIR
+        frontend_dir = RFSPath.home() / "dashboard" / "frontend"
+
+        if step_type == "backend_compile":
+            result = rfs_run_command(
+                "python -m py_compile dashboard\\backend\\main.py",
+                backend_root,
+                timeout_seconds=90
+            )
+            result["type"] = "backend_compile"
+            result["title"] = "Backend Compile Retry"
+
+        elif step_type == "frontend_build":
+            result = rfs_run_command(
+                "npm run build",
+                frontend_dir,
+                timeout_seconds=180
+            )
+            result["type"] = "frontend_build"
+            result["title"] = "Frontend Build Retry"
+
+        else:
+            backend_result = rfs_run_command(
+                "python -m py_compile dashboard\\backend\\main.py",
+                backend_root,
+                timeout_seconds=90
+            )
+
+            frontend_result = rfs_run_command(
+                "npm run build",
+                frontend_dir,
+                timeout_seconds=180
+            )
+
+            all_ok = backend_result["ok"] and frontend_result["ok"]
+
+            result = {
+                "ok": all_ok,
+                "type": "full_check",
+                "title": "Full QA Retry",
+                "command": "backend compile + frontend build",
+                "cwd": str(RFS_BASE_DIR),
+                "return_code": 0 if all_ok else 1,
+                "stdout": "Backend retry stdout:\n"
+                    + backend_result.get("stdout", "")
+                    + "\n\nFrontend retry stdout:\n"
+                    + frontend_result.get("stdout", ""),
+                "stderr": "Backend retry stderr:\n"
+                    + backend_result.get("stderr", "")
+                    + "\n\nFrontend retry stderr:\n"
+                    + frontend_result.get("stderr", ""),
+                "started_at": backend_result["started_at"],
+                "finished_at": frontend_result["finished_at"]
+            }
+
+        result["status"] = "passed" if result["ok"] else "failed"
+
+        retry_record = {
+            "retried_from": {
+                "type": step_type,
+                "title": title,
+                "command": latest.get("command", ""),
+                "failed_at": latest.get("finished_at", latest.get("started_at", ""))
+            },
+            "retry_result": result,
+            "retried_at": RFSDatetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+        rfs_save_retry(retry_record)
+        rfs_save_qa(result)
+
+        return {
+            "ok": result["ok"],
+            "message": "Retry passed." if result["ok"] else "Retry failed again.",
+            "result": result,
+            "retry_record": retry_record
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Retry failed to run.",
+            "error": str(error)
+        }
+
+@app.get("/retry-failed/history")
+def retry_failed_history():
+    try:
+        return {
+            "ok": True,
+            "history": rfs_read_json(RFS_RETRY_HISTORY_FILE, [])
+        }
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to read retry history.",
+            "error": str(error),
+            "history": []
+        }
