@@ -6326,3 +6326,403 @@ def retry_failed_history():
             "error": str(error),
             "history": []
         }
+
+# ============================================================
+# Agent Tool Permissions v1
+# ============================================================
+
+from pydantic import BaseModel as ATPBaseModel
+from pathlib import Path as ATPPath
+from datetime import datetime as ATPDatetime
+import json as ATPJson
+
+ATP_BASE_DIR = ATPPath(__file__).resolve().parents[2]
+ATP_MEMORY_DIR = ATP_BASE_DIR / "memory"
+ATP_PERMISSIONS_FILE = ATP_MEMORY_DIR / "agent_tool_permissions.json"
+ATP_AUDIT_FILE = ATP_MEMORY_DIR / "agent_tool_permission_audit.json"
+
+class ATPUpdateRequest(ATPBaseModel):
+    tool_id: str
+    status: str
+    reason: str = ""
+
+class ATPCheckRequest(ATPBaseModel):
+    tool_id: str
+    agent_name: str = "Unknown Agent"
+    task: str = ""
+
+def atp_default_permissions():
+    return [
+        {
+            "tool_id": "read_project_brain",
+            "tool_name": "Read Project Brain",
+            "category": "Memory",
+            "risk": "low",
+            "status": "allowed",
+            "description": "Agent can read project_brain.md.",
+            "protected": False
+        },
+        {
+            "tool_id": "read_memory",
+            "tool_name": "Read Memory",
+            "category": "Memory",
+            "risk": "low",
+            "status": "allowed",
+            "description": "Agent can read long memory, short memory, and workflow memory.",
+            "protected": False
+        },
+        {
+            "tool_id": "write_memory",
+            "tool_name": "Write Memory",
+            "category": "Memory",
+            "risk": "medium",
+            "status": "approval_required",
+            "description": "Agent can update memory files only after approval.",
+            "protected": False
+        },
+        {
+            "tool_id": "create_generated_file",
+            "tool_name": "Create Generated File",
+            "category": "Files",
+            "risk": "medium",
+            "status": "allowed",
+            "description": "Agent can create draft files inside generated_pages.",
+            "protected": False
+        },
+        {
+            "tool_id": "read_generated_file",
+            "tool_name": "Read Generated File",
+            "category": "Files",
+            "risk": "low",
+            "status": "allowed",
+            "description": "Agent can read generated draft files.",
+            "protected": False
+        },
+        {
+            "tool_id": "delete_generated_file",
+            "tool_name": "Delete Generated File",
+            "category": "Files",
+            "risk": "medium",
+            "status": "approval_required",
+            "description": "Agent needs approval before deleting generated files.",
+            "protected": False
+        },
+        {
+            "tool_id": "safe_install_frontend",
+            "tool_name": "Safe Install Frontend Page",
+            "category": "Safe Install",
+            "risk": "high",
+            "status": "approval_required",
+            "description": "Agent can install frontend pages only after human approval.",
+            "protected": True
+        },
+        {
+            "tool_id": "safe_install_backend",
+            "tool_name": "Safe Install Backend File",
+            "category": "Safe Install",
+            "risk": "high",
+            "status": "approval_required",
+            "description": "Agent can change backend files only after approval.",
+            "protected": True
+        },
+        {
+            "tool_id": "run_backend_compile",
+            "tool_name": "Run Backend Compile",
+            "category": "QA",
+            "risk": "low",
+            "status": "allowed",
+            "description": "Agent can run python compile checks.",
+            "protected": False
+        },
+        {
+            "tool_id": "run_frontend_build",
+            "tool_name": "Run Frontend Build",
+            "category": "QA",
+            "risk": "medium",
+            "status": "allowed",
+            "description": "Agent can run npm build checks.",
+            "protected": False
+        },
+        {
+            "tool_id": "retry_failed_step",
+            "tool_name": "Retry Failed Step",
+            "category": "QA",
+            "risk": "medium",
+            "status": "allowed",
+            "description": "Agent can retry failed QA steps.",
+            "protected": False
+        },
+        {
+            "tool_id": "git_status",
+            "tool_name": "Git Status",
+            "category": "Git",
+            "risk": "low",
+            "status": "allowed",
+            "description": "Agent can check git status.",
+            "protected": False
+        },
+        {
+            "tool_id": "git_add_commit",
+            "tool_name": "Git Add and Commit",
+            "category": "Git",
+            "risk": "high",
+            "status": "approval_required",
+            "description": "Agent needs approval before staging or committing files.",
+            "protected": True
+        },
+        {
+            "tool_id": "git_push",
+            "tool_name": "Git Push",
+            "category": "Git",
+            "risk": "high",
+            "status": "approval_required",
+            "description": "Agent needs approval before pushing to GitHub.",
+            "protected": True
+        },
+        {
+            "tool_id": "read_env",
+            "tool_name": "Read .env Secrets",
+            "category": "Secrets",
+            "risk": "critical",
+            "status": "blocked",
+            "description": "Agent must not read .env or secret keys.",
+            "protected": True
+        },
+        {
+            "tool_id": "write_env",
+            "tool_name": "Write .env Secrets",
+            "category": "Secrets",
+            "risk": "critical",
+            "status": "blocked",
+            "description": "Agent must not modify .env without direct human handling.",
+            "protected": True
+        },
+        {
+            "tool_id": "delete_real_file",
+            "tool_name": "Delete Real Project File",
+            "category": "Danger Zone",
+            "risk": "critical",
+            "status": "blocked",
+            "description": "Agent must not delete real project files automatically.",
+            "protected": True
+        },
+        {
+            "tool_id": "deploy_backend",
+            "tool_name": "Deploy Backend Server",
+            "category": "Deployment",
+            "risk": "high",
+            "status": "approval_required",
+            "description": "Agent needs approval before deploying backend.",
+            "protected": True
+        },
+        {
+            "tool_id": "deploy_frontend",
+            "tool_name": "Deploy Frontend",
+            "category": "Deployment",
+            "risk": "medium",
+            "status": "approval_required",
+            "description": "Agent needs approval before deployment actions.",
+            "protected": True
+        }
+    ]
+
+def atp_read_permissions():
+    ATP_MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+
+    if not ATP_PERMISSIONS_FILE.exists():
+        permissions = atp_default_permissions()
+        ATP_PERMISSIONS_FILE.write_text(ATPJson.dumps(permissions, indent=2), encoding="utf-8")
+        return permissions
+
+    try:
+        return ATPJson.loads(ATP_PERMISSIONS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        permissions = atp_default_permissions()
+        ATP_PERMISSIONS_FILE.write_text(ATPJson.dumps(permissions, indent=2), encoding="utf-8")
+        return permissions
+
+def atp_write_permissions(permissions):
+    ATP_MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+    ATP_PERMISSIONS_FILE.write_text(ATPJson.dumps(permissions, indent=2), encoding="utf-8")
+
+def atp_read_audit():
+    try:
+        if ATP_AUDIT_FILE.exists():
+            return ATPJson.loads(ATP_AUDIT_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return []
+
+def atp_write_audit(items):
+    ATP_MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+    ATP_AUDIT_FILE.write_text(ATPJson.dumps(items, indent=2), encoding="utf-8")
+
+def atp_add_audit(action, detail):
+    items = atp_read_audit()
+    items.insert(0, {
+        "action": action,
+        "detail": detail,
+        "created_at": ATPDatetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    })
+    atp_write_audit(items[:200])
+
+@app.get("/agent-tool-permissions")
+def agent_tool_permissions_list():
+    try:
+        permissions = atp_read_permissions()
+
+        counts = {
+            "allowed": len([p for p in permissions if p.get("status") == "allowed"]),
+            "approval_required": len([p for p in permissions if p.get("status") == "approval_required"]),
+            "blocked": len([p for p in permissions if p.get("status") == "blocked"]),
+            "total": len(permissions)
+        }
+
+        return {
+            "ok": True,
+            "counts": counts,
+            "permissions": permissions,
+            "audit": atp_read_audit()[:20]
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to load agent tool permissions.",
+            "error": str(error),
+            "permissions": []
+        }
+
+@app.post("/agent-tool-permissions/update")
+def agent_tool_permissions_update(request: ATPUpdateRequest):
+    try:
+        allowed_statuses = ["allowed", "approval_required", "blocked"]
+
+        if request.status not in allowed_statuses:
+            return {
+                "ok": False,
+                "message": "Invalid status. Use allowed, approval_required, or blocked."
+            }
+
+        permissions = atp_read_permissions()
+        updated = False
+
+        for item in permissions:
+            if item.get("tool_id") == request.tool_id:
+                old_status = item.get("status")
+                item["status"] = request.status
+                item["updated_at"] = ATPDatetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                item["last_reason"] = request.reason
+                updated = True
+
+                atp_add_audit("permission_updated", {
+                    "tool_id": request.tool_id,
+                    "old_status": old_status,
+                    "new_status": request.status,
+                    "reason": request.reason
+                })
+                break
+
+        if not updated:
+            return {
+                "ok": False,
+                "message": "Tool permission not found.",
+                "tool_id": request.tool_id
+            }
+
+        atp_write_permissions(permissions)
+
+        return {
+            "ok": True,
+            "message": "Permission updated.",
+            "tool_id": request.tool_id,
+            "status": request.status
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to update permission.",
+            "error": str(error)
+        }
+
+@app.post("/agent-tool-permissions/check")
+def agent_tool_permissions_check(request: ATPCheckRequest):
+    try:
+        permissions = atp_read_permissions()
+        found = None
+
+        for item in permissions:
+            if item.get("tool_id") == request.tool_id:
+                found = item
+                break
+
+        if not found:
+            return {
+                "ok": False,
+                "message": "Tool permission not found.",
+                "decision": "blocked",
+                "can_run": False
+            }
+
+        status = found.get("status")
+
+        if status == "allowed":
+            decision = "allowed"
+            can_run = True
+            needs_approval = False
+        elif status == "approval_required":
+            decision = "approval_required"
+            can_run = False
+            needs_approval = True
+        else:
+            decision = "blocked"
+            can_run = False
+            needs_approval = False
+
+        atp_add_audit("permission_checked", {
+            "tool_id": request.tool_id,
+            "agent_name": request.agent_name,
+            "task": request.task,
+            "decision": decision
+        })
+
+        return {
+            "ok": True,
+            "tool": found,
+            "decision": decision,
+            "can_run": can_run,
+            "needs_approval": needs_approval
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to check permission.",
+            "error": str(error),
+            "decision": "blocked",
+            "can_run": False
+        }
+
+@app.post("/agent-tool-permissions/reset")
+def agent_tool_permissions_reset():
+    try:
+        permissions = atp_default_permissions()
+        atp_write_permissions(permissions)
+
+        atp_add_audit("permissions_reset", {
+            "message": "Permissions reset to safe defaults."
+        })
+
+        return {
+            "ok": True,
+            "message": "Permissions reset to safe defaults.",
+            "permissions": permissions
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to reset permissions.",
+            "error": str(error)
+        }
