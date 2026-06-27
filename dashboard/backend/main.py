@@ -5562,3 +5562,156 @@ def agent_file_writer_read_file(file_name: str):
             "message": "Failed to read generated file.",
             "error": str(error)
         }
+
+# ============================================================
+# Generated File Library v1
+# ============================================================
+
+from pydantic import BaseModel as GFLBaseModel
+from pathlib import Path as GFLPath
+from datetime import datetime as GFLDatetime
+import re as GFLRe
+import difflib as GFLDiffLib
+
+class GFLInstallPlanRequest(GFLBaseModel):
+    file_name: str
+    route_path: str = "generated-health-dashboard"
+
+def gfl_safe_file_name(file_name: str):
+    name = (file_name or "").strip().replace("\\", "/").split("/")[-1]
+    name = GFLRe.sub(r"[^a-zA-Z0-9._-]", "-", name)
+
+    if not name:
+        return ""
+
+    return name
+
+def gfl_safe_route_path(route_path: str):
+    route = (route_path or "").strip().replace("\\", "/").strip("/")
+    route = GFLRe.sub(r"[^a-zA-Z0-9/_-]", "-", route)
+    route = route.strip("/")
+    if not route:
+        route = "generated-page"
+    return route
+
+@app.delete("/agent-file-writer/files/{file_name}")
+def generated_file_library_delete(file_name: str):
+    try:
+        safe_name = gfl_safe_file_name(file_name)
+        if not safe_name:
+            return {"ok": False, "message": "Invalid file name."}
+
+        generated_dir = AFW_GENERATED_DIR
+        target_path = generated_dir / safe_name
+
+        if not target_path.exists():
+            return {"ok": False, "message": "File not found.", "file_name": safe_name}
+
+        target_path.unlink()
+
+        return {
+            "ok": True,
+            "message": "Generated file deleted.",
+            "file_name": safe_name
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to delete generated file.",
+            "error": str(error)
+        }
+
+@app.post("/agent-file-writer/install-plan")
+def generated_file_library_install_plan(request: GFLInstallPlanRequest):
+    try:
+        safe_name = gfl_safe_file_name(request.file_name)
+        safe_route = gfl_safe_route_path(request.route_path)
+
+        source_path = AFW_GENERATED_DIR / safe_name
+
+        if not source_path.exists():
+            return {
+                "ok": False,
+                "message": "Generated file not found.",
+                "file_name": safe_name
+            }
+
+        new_content = source_path.read_text(encoding="utf-8")
+
+        frontend_dir = GFLPath.home() / "dashboard" / "frontend"
+        target_dir = frontend_dir / "app" / safe_route
+        target_path = target_dir / "page.tsx"
+
+        old_content = ""
+        target_exists = target_path.exists()
+
+        if target_exists:
+            old_content = target_path.read_text(encoding="utf-8")
+
+        diff = list(GFLDiffLib.unified_diff(
+            old_content.splitlines(),
+            new_content.splitlines(),
+            fromfile=f"old: app/{safe_route}/page.tsx",
+            tofile=f"new: {safe_name}",
+            lineterm=""
+        ))
+
+        return {
+            "ok": True,
+            "message": "Install plan created. Review before Safe Install.",
+            "source_file": safe_name,
+            "source_path": str(source_path),
+            "route_path": safe_route,
+            "target_path": str(target_path),
+            "target_exists": target_exists,
+            "new_content": new_content,
+            "old_content": old_content,
+            "diff": diff[:500],
+            "next_steps": [
+                "Review generated code.",
+                "Confirm target route.",
+                "Use Safe Install connection in the next build step.",
+                "Do not overwrite important files without approval."
+            ],
+            "created_at": GFLDatetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to create install plan.",
+            "error": str(error)
+        }
+
+@app.get("/agent-file-writer/stats")
+def generated_file_library_stats():
+    try:
+        AFW_GENERATED_DIR.mkdir(parents=True, exist_ok=True)
+
+        files = [p for p in AFW_GENERATED_DIR.glob("*") if p.is_file()]
+        total_size = sum(p.stat().st_size for p in files)
+
+        latest_file = None
+        if files:
+            latest = max(files, key=lambda p: p.stat().st_mtime)
+            latest_file = {
+                "file_name": latest.name,
+                "updated_at": GFLDatetime.fromtimestamp(latest.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+                "size_bytes": latest.stat().st_size
+            }
+
+        return {
+            "ok": True,
+            "count": len(files),
+            "total_size_bytes": total_size,
+            "latest_file": latest_file,
+            "folder": str(AFW_GENERATED_DIR)
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to read generated file stats.",
+            "error": str(error)
+        }
