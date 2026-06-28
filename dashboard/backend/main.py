@@ -4736,7 +4736,7 @@ STRICT RULES:
             "message": "Failed to build prompt inspector.",
             "error": str(error),
         }
-
+
 
 # ============================================================
 # Agent Workflow Board v1
@@ -4872,7 +4872,7 @@ def reset_agent_workflow():
             "message": "Failed to reset agent workflow.",
             "error": str(error),
         }
-
+
 
 # ============================================================
 # Agent Workflow Advance v2
@@ -4940,7 +4940,7 @@ def advance_agent_workflow():
             "message": "Failed to advance workflow.",
             "error": str(error),
         }
-
+
 
 # ============================================================
 # Agent Workflow Report Export v1
@@ -5063,7 +5063,7 @@ def latest_agent_workflow_report_preview():
             "message": "Failed to load latest workflow report.",
             "error": str(error),
         }
-
+
 
 # ============================================================
 # Recent Activity Timeline v1
@@ -5130,7 +5130,7 @@ def recent_activity_timeline():
             "message": "Failed to load recent activity.",
             "error": str(error),
         }
-
+
 
 # ============================================================
 # Agent Workflow Reports v1
@@ -5249,7 +5249,7 @@ def list_agent_workflow_reports():
             "message": "Failed to list workflow reports.",
             "error": str(error),
         }
-
+
 
 # ============================================================
 # Git Safety Guard v1
@@ -5403,7 +5403,7 @@ def git_safety_check():
             "message": "Failed to run Git Safety Guard.",
             "error": str(error),
         }
-
+
 
 # ============================================================
 # Agent File Writer v1
@@ -5561,7 +5561,7 @@ def agent_file_writer_read_file(file_name: str):
             "ok": False,
             "message": "Failed to read generated file.",
             "error": str(error)
-        }
+        }
 
 # ============================================================
 # Generated File Library v1
@@ -5714,7 +5714,7 @@ def generated_file_library_stats():
             "ok": False,
             "message": "Failed to read generated file stats.",
             "error": str(error)
-        }
+        }
 
 # ============================================================
 # Generated File -> Safe Install Bridge v1
@@ -5921,7 +5921,7 @@ def generated_files_safe_install_history():
             "message": "Failed to read safe install history.",
             "error": str(error),
             "history": []
-        }
+        }
 
 # ============================================================
 # QA Runner v1
@@ -6105,7 +6105,7 @@ def qa_runner_history():
             "message": "Failed to read QA history.",
             "error": str(error),
             "history": []
-        }
+        }
 
 # ============================================================
 # Retry Failed Step v1
@@ -6325,7 +6325,7 @@ def retry_failed_history():
             "message": "Failed to read retry history.",
             "error": str(error),
             "history": []
-        }
+        }
 
 # ============================================================
 # Agent Tool Permissions v1
@@ -6725,7 +6725,7 @@ def agent_tool_permissions_reset():
             "ok": False,
             "message": "Failed to reset permissions.",
             "error": str(error)
-        }
+        }
 
 # ============================================================
 # Real Agent Output v1 - UI/UX Designer Agent
@@ -6976,7 +6976,7 @@ def real_agents_ui_ux_run(request: UXODesignerRequest):
             "ok": False,
             "message": "UI/UX Designer Agent failed.",
             "error": str(error)
-        }
+        }
 
 # ============================================================
 # Real Agent Output v1 - Frontend Developer Agent
@@ -7228,7 +7228,7 @@ This agent only writes to generated_pages. It does not overwrite real frontend a
             "ok": False,
             "message": "Frontend Developer Agent failed.",
             "error": str(error)
-        }
+        }
 
 # ============================================================
 # Real Agent Output v1 - Backend Developer Agent
@@ -7424,7 +7424,7 @@ Review before installing into real backend.
             "ok": False,
             "message": "Backend Developer Agent failed.",
             "error": str(error)
-        }
+        }
 
 # ============================================================
 # Real Agent Output v1 - QA Tester Agent
@@ -7646,7 +7646,7 @@ STDERR:
             "ok": False,
             "message": "QA Tester Agent failed to run.",
             "error": str(error)
-        }
+        }
 
 # ============================================================
 # Real Agent Output v1 - Project Reviewer Agent
@@ -7837,7 +7837,7 @@ Do not install or deploy unless final decision is APPROVED.
             "ok": False,
             "message": "Project Reviewer Agent failed.",
             "error": str(error)
-        }
+        }
 
 # ============================================================
 # Real Agent Output v1 - Product Manager Agent RESTORE
@@ -7987,7 +7987,7 @@ Approved for staged build with safety gates.
             "ok": False,
             "message": "Product Manager Agent failed.",
             "error": str(error)
-        }
+        }
 
 # ============================================================
 # Real Agent Shared Routes RESTORE
@@ -8053,7 +8053,7 @@ def real_agents_read_report_restore(file_name: str):
             "ok": False,
             "message": "Failed to read report.",
             "error": str(error)
-        }
+        }
 
 # ============================================================
 # Agent Chain Runner v1
@@ -8440,7 +8440,7 @@ def agent_chain_runner_history():
             "message": "Failed to load agent chain history.",
             "error": str(error),
             "history": []
-        }
+        }
 
 # ============================================================
 # Agent Chain Runner Safe Install Bridge v1
@@ -8665,7 +8665,7 @@ def agent_chain_runner_safe_install_approve(request: ACSApproveRequest):
             "ok": False,
             "message": "Safe install approve failed.",
             "error": str(error)
-        }
+        }
 
 # ============================================================
 # Agent Chain Runner Auto QA After Install v1
@@ -8796,7 +8796,7 @@ def agent_chain_runner_qa_after_install_history():
             "message": "Failed to load QA after install history.",
             "error": str(error),
             "history": []
-        }
+        }
 
 # ============================================================
 # Agent Chain Runner Rollback v1
@@ -8941,7 +8941,7 @@ def agent_chain_runner_rollback_last_install(request: ARBRollbackRequest):
             "ok": False,
             "message": "Rollback failed.",
             "error": str(error)
-        }
+        }
 
 # ============================================================
 # Agent Chain Runner Feature Registry Sync v1
@@ -9172,7 +9172,7 @@ def agent_chain_runner_feature_registry_sync_history():
             "message": "Failed to load Feature Registry sync history.",
             "error": str(error),
             "history": []
-        }
+        }
 
 # ============================================================
 # Agent Chain Runner Project Brain Sync v1
@@ -9298,7 +9298,7 @@ def apb_make_update_block(request, chain_run, registry_item, install_item, qa_it
     files_text = "\n".join(files) if files else "- No generated files found yet."
 
     return f"""
-## Agent Chain Update — {request.feature_name}
+## Agent Chain Update â€” {request.feature_name}
 
 Updated at: {now}
 
@@ -9363,7 +9363,7 @@ def agent_chain_runner_sync_project_brain(request: APBSyncRequest):
             rollback_item=rollback_item
         )
 
-        title_marker = f"## Agent Chain Update — {request.feature_name}"
+        title_marker = f"## Agent Chain Update â€” {request.feature_name}"
 
         apb_append_unique_block(APB_PROJECT_BRAIN_FILE, title_marker, block)
         apb_append_unique_block(APB_LONG_MEMORY_FILE, title_marker, block)
@@ -9410,4 +9410,4 @@ def agent_chain_runner_project_brain_sync_history():
             "message": "Failed to load Project Brain sync history.",
             "error": str(error),
             "history": []
-        }
+        }
