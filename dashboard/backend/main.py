@@ -8441,3 +8441,228 @@ def agent_chain_runner_history():
             "error": str(error),
             "history": []
         }
+
+# ============================================================
+# Agent Chain Runner Safe Install Bridge v1
+# ============================================================
+
+from pydantic import BaseModel as ACSBaseModel
+from pathlib import Path as ACSPath
+from datetime import datetime as ACSDatetime
+import json as ACSJson
+import re as ACSRe
+
+ACS_BASE_DIR = ACSPath(__file__).resolve().parents[2]
+ACS_MEMORY_DIR = ACS_BASE_DIR / "memory"
+ACS_GENERATED_DIR = ACS_BASE_DIR / "generated_pages"
+ACS_HISTORY_FILE = ACS_MEMORY_DIR / "agent_chain_runner_history.json"
+ACS_INSTALL_LOG_FILE = ACS_MEMORY_DIR / "agent_chain_safe_install_log.json"
+ACS_FRONTEND_ROOT = ACSPath.home() / "dashboard" / "frontend"
+ACS_BACKUP_DIR = ACS_BASE_DIR / "backups" / "agent_chain_safe_installs"
+
+class ACSPreviewRequest(ACSBaseModel):
+    file_name: str
+    target_route: str
+
+class ACSApproveRequest(ACSBaseModel):
+    file_name: str
+    target_route: str
+    approval_text: str
+
+def acs_read_json(path, default):
+    try:
+        if path.exists():
+            return ACSJson.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return default
+
+def acs_write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(ACSJson.dumps(data, indent=2), encoding="utf-8")
+
+def acs_safe_file_name(name):
+    safe = name.strip().replace("\\", "/").split("/")[-1]
+    safe = ACSRe.sub(r"[^a-zA-Z0-9._-]", "-", safe)
+    return safe
+
+def acs_safe_route(route):
+    clean = route.strip().replace("\\", "/").strip("/")
+    clean = ACSRe.sub(r"[^a-zA-Z0-9_/-]", "-", clean)
+    clean = clean.strip("/")
+    if not clean:
+        clean = "generated-chain-page"
+    return clean
+
+def acs_latest_run():
+    history = acs_read_json(ACS_HISTORY_FILE, [])
+    if len(history) == 0:
+        return None
+    return history[0]
+
+def acs_find_frontend_file_from_run(run):
+    if not run:
+        return ""
+
+    for step in run.get("steps", []):
+        file_name = step.get("file", "")
+        if file_name.endswith(".tsx"):
+            return file_name
+
+    return ""
+
+def acs_file_preview_text(old_text, new_text):
+    old_lines = old_text.splitlines()
+    new_lines = new_text.splitlines()
+
+    return {
+        "old_line_count": len(old_lines),
+        "new_line_count": len(new_lines),
+        "old_preview": "\n".join(old_lines[:120]),
+        "new_preview": "\n".join(new_lines[:120])
+    }
+
+def acs_add_log(item):
+    log = acs_read_json(ACS_INSTALL_LOG_FILE, [])
+    log.insert(0, item)
+    acs_write_json(ACS_INSTALL_LOG_FILE, log[:100])
+
+@app.get("/agent-chain-runner/latest")
+def agent_chain_runner_latest():
+    try:
+        run = acs_latest_run()
+        file_name = acs_find_frontend_file_from_run(run)
+
+        return {
+            "ok": True,
+            "latest_run": run,
+            "frontend_file": file_name
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to load latest chain run.",
+            "error": str(error)
+        }
+
+@app.get("/agent-chain-runner/safe-install-history")
+def agent_chain_runner_safe_install_history():
+    try:
+        return {
+            "ok": True,
+            "history": acs_read_json(ACS_INSTALL_LOG_FILE, [])
+        }
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to load safe install history.",
+            "error": str(error),
+            "history": []
+        }
+
+@app.post("/agent-chain-runner/safe-install-preview")
+def agent_chain_runner_safe_install_preview(request: ACSPreviewRequest):
+    try:
+        safe_file = acs_safe_file_name(request.file_name)
+        safe_route = acs_safe_route(request.target_route)
+
+        source_path = ACS_GENERATED_DIR / safe_file
+        target_path = ACS_FRONTEND_ROOT / "app" / safe_route / "page.tsx"
+
+        if not source_path.exists():
+            return {
+                "ok": False,
+                "message": "Generated source file not found.",
+                "source_file": safe_file,
+                "source_path": str(source_path)
+            }
+
+        new_text = source_path.read_text(encoding="utf-8")
+        old_text = ""
+
+        if target_path.exists():
+            old_text = target_path.read_text(encoding="utf-8")
+
+        preview = acs_file_preview_text(old_text, new_text)
+
+        return {
+            "ok": True,
+            "message": "Safe install preview created.",
+            "source_file": safe_file,
+            "target_route": safe_route,
+            "source_path": str(source_path),
+            "target_path": str(target_path),
+            "target_exists": target_path.exists(),
+            "preview": preview,
+            "approval_required": "APPROVE CHAIN INSTALL"
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Safe install preview failed.",
+            "error": str(error)
+        }
+
+@app.post("/agent-chain-runner/safe-install-approve")
+def agent_chain_runner_safe_install_approve(request: ACSApproveRequest):
+    try:
+        if request.approval_text.strip() != "APPROVE CHAIN INSTALL":
+            return {
+                "ok": False,
+                "message": "Approval text is wrong. Type APPROVE CHAIN INSTALL exactly."
+            }
+
+        safe_file = acs_safe_file_name(request.file_name)
+        safe_route = acs_safe_route(request.target_route)
+
+        source_path = ACS_GENERATED_DIR / safe_file
+        target_dir = ACS_FRONTEND_ROOT / "app" / safe_route
+        target_path = target_dir / "page.tsx"
+
+        if not source_path.exists():
+            return {
+                "ok": False,
+                "message": "Generated source file not found.",
+                "source_file": safe_file
+            }
+
+        target_dir.mkdir(parents=True, exist_ok=True)
+        ACS_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+
+        timestamp = ACSDatetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = None
+
+        if target_path.exists():
+            backup_name = f"{safe_route.replace('/', '-')}_page_{timestamp}.tsx.bak"
+            backup_path = ACS_BACKUP_DIR / backup_name
+            backup_path.write_text(target_path.read_text(encoding="utf-8"), encoding="utf-8")
+
+        new_text = source_path.read_text(encoding="utf-8")
+        target_path.write_text(new_text, encoding="utf-8")
+
+        log_item = {
+            "source_file": safe_file,
+            "target_route": safe_route,
+            "source_path": str(source_path),
+            "target_path": str(target_path),
+            "backup_path": str(backup_path) if backup_path else "",
+            "installed_at": ACSDatetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "status": "installed"
+        }
+
+        acs_add_log(log_item)
+
+        return {
+            "ok": True,
+            "message": "Chain generated page installed safely.",
+            "install": log_item
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Safe install approve failed.",
+            "error": str(error)
+        }
