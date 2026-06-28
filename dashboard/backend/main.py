@@ -10083,3 +10083,213 @@ def agent_chain_runner_complete_flow_safe_history():
             "error": str(error),
             "history": []
         }
+
+# ============================================================
+# Agent Chain Runner Live Timeline v1
+# ============================================================
+
+from pathlib import Path as ATLPath
+from datetime import datetime as ATLDatetime
+import json as ATLJson
+
+ATL_BASE_DIR = ATLPath(__file__).resolve().parents[2]
+ATL_MEMORY_DIR = ATL_BASE_DIR / "memory"
+
+ATL_CHAIN_HISTORY_FILE = ATL_MEMORY_DIR / "agent_chain_runner_history.json"
+ATL_COMPLETE_FLOW_HISTORY_FILE = ATL_MEMORY_DIR / "agent_chain_complete_flow_history.json"
+ATL_SAFE_COMPLETE_FLOW_HISTORY_FILE = ATL_MEMORY_DIR / "agent_chain_safe_complete_flow_history.json"
+ATL_INSTALL_LOG_FILE = ATL_MEMORY_DIR / "agent_chain_safe_install_log.json"
+ATL_QA_LOG_FILE = ATL_MEMORY_DIR / "agent_chain_install_qa_log.json"
+ATL_ROLLBACK_LOG_FILE = ATL_MEMORY_DIR / "agent_chain_rollback_log.json"
+ATL_REGISTRY_SYNC_LOG_FILE = ATL_MEMORY_DIR / "agent_chain_feature_registry_sync_log.json"
+ATL_PROJECT_BRAIN_SYNC_LOG_FILE = ATL_MEMORY_DIR / "agent_chain_project_brain_sync_log.json"
+ATL_HANDOFF_EXPORT_LOG_FILE = ATL_MEMORY_DIR / "agent_chain_handoff_export_log.json"
+
+def atl_read_json(path, default):
+    try:
+        if path.exists():
+            return ATLJson.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return default
+
+def atl_time_value(value):
+    if not value:
+        return ""
+    return str(value)
+
+def atl_event(event_type, title, status, created_at, message="", source="", details=None):
+    return {
+        "type": event_type,
+        "title": title,
+        "status": status,
+        "created_at": atl_time_value(created_at),
+        "message": message,
+        "source": source,
+        "details": details or {}
+    }
+
+def atl_collect_events():
+    events = []
+
+    chain_history = atl_read_json(ATL_CHAIN_HISTORY_FILE, [])
+    for run in chain_history[:20]:
+        events.append(atl_event(
+            "chain_run",
+            f"Agent chain: {run.get('feature_name', 'Unknown feature')}",
+            run.get("status", "unknown"),
+            run.get("created_at", ""),
+            run.get("task", ""),
+            "agent_chain_runner",
+            {
+                "frontend_route": run.get("frontend_route", ""),
+                "backend_route": run.get("backend_route", ""),
+                "qa_passed": run.get("qa_passed", False)
+            }
+        ))
+
+        for step in run.get("steps", []):
+            events.append(atl_event(
+                "agent_step",
+                step.get("agent", "Agent step"),
+                step.get("status", "unknown"),
+                run.get("created_at", ""),
+                step.get("file", ""),
+                "agent_chain_runner_step",
+                step
+            ))
+
+    complete_flows = atl_read_json(ATL_COMPLETE_FLOW_HISTORY_FILE, [])
+    for flow in complete_flows[:20]:
+        events.append(atl_event(
+            "complete_flow",
+            f"One click flow: {flow.get('feature_name', 'Unknown feature')}",
+            flow.get("status", "unknown"),
+            flow.get("created_at", ""),
+            "One click complete flow finished.",
+            "complete_flow",
+            {
+                "qa_passed": flow.get("qa_passed", False),
+                "generated_frontend_file": flow.get("generated_frontend_file", "")
+            }
+        ))
+
+    safe_flows = atl_read_json(ATL_SAFE_COMPLETE_FLOW_HISTORY_FILE, [])
+    for flow in safe_flows[:20]:
+        events.append(atl_event(
+            "safe_complete_flow",
+            f"Safe flow: {flow.get('feature_name', 'Unknown feature')}",
+            flow.get("status", "unknown"),
+            flow.get("created_at", ""),
+            f"Rollback: {flow.get('rollback_status', 'unknown')}",
+            "safe_complete_flow",
+            {
+                "qa_passed": flow.get("qa_passed", False),
+                "rollback_status": flow.get("rollback_status", "unknown"),
+                "generated_frontend_file": flow.get("generated_frontend_file", "")
+            }
+        ))
+
+    install_logs = atl_read_json(ATL_INSTALL_LOG_FILE, [])
+    for item in install_logs[:20]:
+        events.append(atl_event(
+            "safe_install",
+            f"Safe install: /{item.get('target_route', '')}",
+            item.get("status", "installed"),
+            item.get("installed_at", ""),
+            item.get("source_file", ""),
+            "safe_install",
+            item
+        ))
+
+    qa_logs = atl_read_json(ATL_QA_LOG_FILE, [])
+    for item in qa_logs[:20]:
+        events.append(atl_event(
+            "qa_after_install",
+            f"QA after install: /{item.get('target_route', '')}",
+            item.get("status", "unknown"),
+            item.get("created_at", ""),
+            "Post-install QA completed.",
+            "qa_after_install",
+            {
+                "passed": item.get("passed", False),
+                "backend_ok": item.get("backend", {}).get("ok", False),
+                "frontend_ok": item.get("frontend", {}).get("ok", False)
+            }
+        ))
+
+    rollback_logs = atl_read_json(ATL_ROLLBACK_LOG_FILE, [])
+    for item in rollback_logs[:20]:
+        events.append(atl_event(
+            "rollback",
+            f"Rollback: /{item.get('target_route', '')}",
+            item.get("status", "rolled_back"),
+            item.get("rolled_back_at", ""),
+            item.get("reason", ""),
+            "rollback",
+            item
+        ))
+
+    registry_logs = atl_read_json(ATL_REGISTRY_SYNC_LOG_FILE, [])
+    for item in registry_logs[:20]:
+        events.append(atl_event(
+            "feature_registry_sync",
+            f"Feature Registry sync: {item.get('feature_name', '')}",
+            item.get("status", "synced"),
+            item.get("synced_at", ""),
+            item.get("action", ""),
+            "feature_registry",
+            item
+        ))
+
+    brain_logs = atl_read_json(ATL_PROJECT_BRAIN_SYNC_LOG_FILE, [])
+    for item in brain_logs[:20]:
+        events.append(atl_event(
+            "project_brain_sync",
+            f"Project Brain sync: {item.get('feature_name', '')}",
+            item.get("status", "synced"),
+            item.get("synced_at", ""),
+            item.get("project_brain_file", ""),
+            "project_brain",
+            item
+        ))
+
+    handoff_logs = atl_read_json(ATL_HANDOFF_EXPORT_LOG_FILE, [])
+    for item in handoff_logs[:20]:
+        events.append(atl_event(
+            "handoff_export",
+            f"Handoff export: {item.get('feature_name', '')}",
+            item.get("status", "exported"),
+            item.get("exported_at", ""),
+            item.get("handoff_file", ""),
+            "handoff_export",
+            item
+        ))
+
+    events = [event for event in events if event.get("created_at")]
+    events.sort(key=lambda item: item.get("created_at", ""), reverse=True)
+
+    return events[:100]
+
+@app.get("/agent-chain-runner/live-timeline")
+def agent_chain_runner_live_timeline():
+    try:
+        events = atl_collect_events()
+
+        latest = events[0] if events else None
+
+        return {
+            "ok": True,
+            "events": events,
+            "latest": latest,
+            "count": len(events),
+            "generated_at": ATLDatetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to load live timeline.",
+            "error": str(error),
+            "events": []
+        }
