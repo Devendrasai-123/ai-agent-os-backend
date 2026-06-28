@@ -8666,3 +8666,134 @@ def agent_chain_runner_safe_install_approve(request: ACSApproveRequest):
             "message": "Safe install approve failed.",
             "error": str(error)
         }
+
+# ============================================================
+# Agent Chain Runner Auto QA After Install v1
+# ============================================================
+
+from pydantic import BaseModel as ACQBaseModel
+from pathlib import Path as ACQPath
+from datetime import datetime as ACQDatetime
+import json as ACQJson
+import subprocess as ACQSubprocess
+
+ACQ_BASE_DIR = ACQPath(__file__).resolve().parents[2]
+ACQ_MEMORY_DIR = ACQ_BASE_DIR / "memory"
+ACQ_INSTALL_QA_LOG_FILE = ACQ_MEMORY_DIR / "agent_chain_install_qa_log.json"
+ACQ_FRONTEND_ROOT = ACQPath.home() / "dashboard" / "frontend"
+
+class ACQRunRequest(ACQBaseModel):
+    target_route: str = "one-click-feature"
+    note: str = "QA after chain safe install"
+
+def acq_read_json(path, default):
+    try:
+        if path.exists():
+            return ACQJson.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return default
+
+def acq_write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(ACQJson.dumps(data, indent=2), encoding="utf-8")
+
+def acq_add_log(item):
+    log = acq_read_json(ACQ_INSTALL_QA_LOG_FILE, [])
+    log.insert(0, item)
+    acq_write_json(ACQ_INSTALL_QA_LOG_FILE, log[:100])
+
+def acq_run_command(command, cwd, timeout_seconds=180):
+    started_at = ACQDatetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    try:
+        process = ACQSubprocess.run(
+            command,
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            shell=True
+        )
+
+        return {
+            "ok": process.returncode == 0,
+            "command": command,
+            "cwd": str(cwd),
+            "return_code": process.returncode,
+            "stdout": process.stdout[-10000:],
+            "stderr": process.stderr[-10000:],
+            "started_at": started_at,
+            "finished_at": ACQDatetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "command": command,
+            "cwd": str(cwd),
+            "return_code": -1,
+            "stdout": "",
+            "stderr": str(error),
+            "started_at": started_at,
+            "finished_at": ACQDatetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+@app.post("/agent-chain-runner/qa-after-install")
+def agent_chain_runner_qa_after_install(request: ACQRunRequest):
+    try:
+        ACQ_MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+
+        backend_result = acq_run_command(
+            "python -m py_compile dashboard\\backend\\main.py",
+            ACQ_BASE_DIR,
+            timeout_seconds=90
+        )
+
+        frontend_result = acq_run_command(
+            "npm run build",
+            ACQ_FRONTEND_ROOT,
+            timeout_seconds=180
+        )
+
+        passed = backend_result.get("ok") and frontend_result.get("ok")
+
+        result = {
+            "target_route": request.target_route,
+            "note": request.note,
+            "status": "passed" if passed else "failed",
+            "passed": passed,
+            "backend": backend_result,
+            "frontend": frontend_result,
+            "created_at": ACQDatetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+        acq_add_log(result)
+
+        return {
+            "ok": True,
+            "message": "QA after install passed." if passed else "QA after install failed.",
+            "result": result
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "QA after install failed to run.",
+            "error": str(error)
+        }
+
+@app.get("/agent-chain-runner/qa-after-install-history")
+def agent_chain_runner_qa_after_install_history():
+    try:
+        return {
+            "ok": True,
+            "history": acq_read_json(ACQ_INSTALL_QA_LOG_FILE, [])
+        }
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to load QA after install history.",
+            "error": str(error),
+            "history": []
+        }
