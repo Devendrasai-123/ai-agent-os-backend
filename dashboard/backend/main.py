@@ -9723,3 +9723,363 @@ def agent_chain_runner_complete_flow_history():
             "error": str(error),
             "history": []
         }
+
+# ============================================================
+# Agent Chain Runner Safe Complete Flow v2
+# Auto rollback if QA fails
+# ============================================================
+
+from pydantic import BaseModel as ACFBaseModel
+from pathlib import Path as ACFPath
+from datetime import datetime as ACFDatetime
+import json as ACFJson
+
+ACF_BASE_DIR = ACFPath(__file__).resolve().parents[2]
+ACF_MEMORY_DIR = ACF_BASE_DIR / "memory"
+ACF_SAFE_FLOW_HISTORY_FILE = ACF_MEMORY_DIR / "agent_chain_safe_complete_flow_history.json"
+
+class ACFSafeCompleteFlowRequest(ACFBaseModel):
+    feature_name: str = "One Click Feature Builder"
+    task: str = "Build a safe generated dashboard feature from one click."
+    priority: str = "High"
+    style: str = "Dark AI dashboard"
+    frontend_route: str = "one-click-feature"
+    backend_route: str = "one-click-feature-api"
+    approval_text: str = ""
+    run_chain_qa: bool = False
+    auto_rollback_on_qa_fail: bool = True
+    note: str = "Safe complete flow v2"
+
+def acf_read_json(path, default):
+    try:
+        if path.exists():
+            return ACFJson.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return default
+
+def acf_write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(ACFJson.dumps(data, indent=2), encoding="utf-8")
+
+def acf_add_history(item):
+    history = acf_read_json(ACF_SAFE_FLOW_HISTORY_FILE, [])
+    history.insert(0, item)
+    acf_write_json(ACF_SAFE_FLOW_HISTORY_FILE, history[:100])
+
+def acf_call(step_name, function_name, class_name, payload):
+    try:
+        func = globals().get(function_name)
+        cls = globals().get(class_name)
+
+        if not callable(func):
+            return {
+                "step": step_name,
+                "ok": False,
+                "message": f"Missing function: {function_name}"
+            }
+
+        if cls is None:
+            return {
+                "step": step_name,
+                "ok": False,
+                "message": f"Missing request class: {class_name}"
+            }
+
+        request_obj = cls(**payload)
+        result = func(request_obj)
+
+        if not isinstance(result, dict):
+            return {
+                "step": step_name,
+                "ok": False,
+                "message": "Step returned non-dict result.",
+                "raw": str(result)
+            }
+
+        return {
+            "step": step_name,
+            "ok": bool(result.get("ok")),
+            "message": result.get("message", ""),
+            "result": result
+        }
+
+    except Exception as error:
+        return {
+            "step": step_name,
+            "ok": False,
+            "message": str(error)
+        }
+
+def acf_find_frontend_file(chain_result):
+    try:
+        run = chain_result.get("run", {})
+        for step in run.get("steps", []):
+            file_name = step.get("file", "")
+            if file_name.endswith(".tsx"):
+                return file_name
+    except Exception:
+        pass
+    return ""
+
+@app.post("/agent-chain-runner/complete-flow-safe")
+def agent_chain_runner_complete_flow_safe(request: ACFSafeCompleteFlowRequest):
+    try:
+        if request.approval_text.strip() != "APPROVE SAFE FULL FLOW":
+            return {
+                "ok": False,
+                "message": "Approval text is wrong. Type APPROVE SAFE FULL FLOW exactly."
+            }
+
+        started_at = ACFDatetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        steps = []
+        rollback_step = None
+
+        chain_step = acf_call(
+            "Run Agent Chain",
+            "agent_chain_runner_run",
+            "ACRRunRequest",
+            {
+                "feature_name": request.feature_name,
+                "task": request.task,
+                "priority": request.priority,
+                "style": request.style,
+                "frontend_route": request.frontend_route,
+                "backend_route": request.backend_route,
+                "run_qa": request.run_chain_qa
+            }
+        )
+        steps.append(chain_step)
+
+        if not chain_step.get("ok"):
+            flow = {
+                "feature_name": request.feature_name,
+                "status": "failed",
+                "failed_at": "Run Agent Chain",
+                "steps": steps,
+                "created_at": started_at
+            }
+            acf_add_history(flow)
+            return {
+                "ok": False,
+                "message": "Safe complete flow stopped at agent chain.",
+                "flow": flow
+            }
+
+        frontend_file = acf_find_frontend_file(chain_step.get("result", {}))
+
+        if not frontend_file:
+            flow = {
+                "feature_name": request.feature_name,
+                "status": "failed",
+                "failed_at": "Find Frontend File",
+                "steps": steps,
+                "created_at": started_at
+            }
+            acf_add_history(flow)
+            return {
+                "ok": False,
+                "message": "No generated frontend .tsx file found.",
+                "flow": flow
+            }
+
+        preview_step = acf_call(
+            "Preview Safe Install",
+            "agent_chain_runner_safe_install_preview",
+            "ACSPreviewRequest",
+            {
+                "file_name": frontend_file,
+                "target_route": request.frontend_route
+            }
+        )
+        steps.append(preview_step)
+
+        if not preview_step.get("ok"):
+            flow = {
+                "feature_name": request.feature_name,
+                "status": "failed",
+                "failed_at": "Preview Safe Install",
+                "steps": steps,
+                "created_at": started_at
+            }
+            acf_add_history(flow)
+            return {
+                "ok": False,
+                "message": "Safe complete flow stopped at safe install preview.",
+                "flow": flow
+            }
+
+        install_step = acf_call(
+            "Approve Safe Install",
+            "agent_chain_runner_safe_install_approve",
+            "ACSApproveRequest",
+            {
+                "file_name": frontend_file,
+                "target_route": request.frontend_route,
+                "approval_text": "APPROVE CHAIN INSTALL"
+            }
+        )
+        steps.append(install_step)
+
+        if not install_step.get("ok"):
+            flow = {
+                "feature_name": request.feature_name,
+                "status": "failed",
+                "failed_at": "Approve Safe Install",
+                "steps": steps,
+                "created_at": started_at
+            }
+            acf_add_history(flow)
+            return {
+                "ok": False,
+                "message": "Safe complete flow stopped at safe install approve.",
+                "flow": flow
+            }
+
+        qa_step = acf_call(
+            "Run QA After Install",
+            "agent_chain_runner_qa_after_install",
+            "ACQRunRequest",
+            {
+                "target_route": request.frontend_route,
+                "note": "QA from safe complete flow v2"
+            }
+        )
+        steps.append(qa_step)
+
+        qa_passed = False
+        try:
+            qa_passed = bool(qa_step.get("result", {}).get("result", {}).get("passed"))
+        except Exception:
+            qa_passed = False
+
+        rollback_status = "not_needed"
+
+        if request.auto_rollback_on_qa_fail and not qa_passed:
+            rollback_step = acf_call(
+                "Auto Rollback After QA Fail",
+                "agent_chain_runner_rollback_last_install",
+                "ARBRollbackRequest",
+                {
+                    "target_route": request.frontend_route,
+                    "approval_text": "ROLLBACK CHAIN INSTALL",
+                    "reason": "Auto rollback from safe complete flow v2 because QA failed"
+                }
+            )
+            steps.append(rollback_step)
+
+            if rollback_step.get("ok"):
+                rollback_status = "rolled_back"
+            else:
+                rollback_status = "rollback_failed_or_no_backup"
+
+        registry_status = "installed_and_qa_passed" if qa_passed else "qa_failed"
+
+        if rollback_status == "rolled_back":
+            registry_status = "rolled_back"
+
+        registry_step = acf_call(
+            "Sync Feature Registry",
+            "agent_chain_runner_sync_feature_registry",
+            "AFRSyncRequest",
+            {
+                "feature_name": request.feature_name,
+                "target_route": request.frontend_route,
+                "backend_route": request.backend_route,
+                "priority": request.priority,
+                "status": registry_status,
+                "note": "Synced from safe complete flow v2"
+            }
+        )
+        steps.append(registry_step)
+
+        brain_step = acf_call(
+            "Sync Project Brain",
+            "agent_chain_runner_sync_project_brain",
+            "APBSyncRequest",
+            {
+                "feature_name": request.feature_name,
+                "target_route": request.frontend_route,
+                "backend_route": request.backend_route,
+                "priority": request.priority,
+                "note": "Synced from safe complete flow v2"
+            }
+        )
+        steps.append(brain_step)
+
+        handoff_step = acf_call(
+            "Export New Chat Handoff",
+            "agent_chain_runner_export_handoff",
+            "AHEExportRequest",
+            {
+                "feature_name": request.feature_name,
+                "target_route": request.frontend_route,
+                "backend_route": request.backend_route,
+                "next_task": "Continue building the next AI Agent OS feature step by step.",
+                "note": "Exported from safe complete flow v2"
+            }
+        )
+        steps.append(handoff_step)
+
+        all_required_ok = (
+            chain_step.get("ok")
+            and preview_step.get("ok")
+            and install_step.get("ok")
+            and registry_step.get("ok")
+            and brain_step.get("ok")
+            and handoff_step.get("ok")
+        )
+
+        if all_required_ok and qa_passed:
+            final_status = "completed_and_qa_passed"
+        elif all_required_ok and rollback_status == "rolled_back":
+            final_status = "completed_with_auto_rollback"
+        else:
+            final_status = "completed_with_attention"
+
+        flow = {
+            "feature_name": request.feature_name,
+            "task": request.task,
+            "priority": request.priority,
+            "style": request.style,
+            "frontend_route": request.frontend_route,
+            "backend_route": request.backend_route,
+            "generated_frontend_file": frontend_file,
+            "status": final_status,
+            "qa_passed": qa_passed,
+            "rollback_status": rollback_status,
+            "auto_rollback_on_qa_fail": request.auto_rollback_on_qa_fail,
+            "steps": steps,
+            "created_at": started_at,
+            "finished_at": ACFDatetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+        acf_add_history(flow)
+
+        return {
+            "ok": True,
+            "message": "Safe complete flow finished.",
+            "flow": flow
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Safe complete flow failed.",
+            "error": str(error)
+        }
+
+@app.get("/agent-chain-runner/complete-flow-safe-history")
+def agent_chain_runner_complete_flow_safe_history():
+    try:
+        return {
+            "ok": True,
+            "history": acf_read_json(ACF_SAFE_FLOW_HISTORY_FILE, [])
+        }
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to load safe complete flow history.",
+            "error": str(error),
+            "history": []
+        }
