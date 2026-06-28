@@ -8942,3 +8942,234 @@ def agent_chain_runner_rollback_last_install(request: ARBRollbackRequest):
             "message": "Rollback failed.",
             "error": str(error)
         }
+
+# ============================================================
+# Agent Chain Runner Feature Registry Sync v1
+# ============================================================
+
+from pydantic import BaseModel as AFRBaseModel
+from pathlib import Path as AFRPath
+from datetime import datetime as AFRDatetime
+import json as AFRJson
+import re as AFRRe
+
+AFR_BASE_DIR = AFRPath(__file__).resolve().parents[2]
+AFR_MEMORY_DIR = AFR_BASE_DIR / "memory"
+AFR_CHAIN_HISTORY_FILE = AFR_MEMORY_DIR / "agent_chain_runner_history.json"
+AFR_FEATURE_REGISTRY_FILE = AFR_MEMORY_DIR / "feature_registry.json"
+AFR_SYNC_LOG_FILE = AFR_MEMORY_DIR / "agent_chain_feature_registry_sync_log.json"
+AFR_INSTALL_LOG_FILE = AFR_MEMORY_DIR / "agent_chain_safe_install_log.json"
+AFR_QA_LOG_FILE = AFR_MEMORY_DIR / "agent_chain_install_qa_log.json"
+AFR_ROLLBACK_LOG_FILE = AFR_MEMORY_DIR / "agent_chain_rollback_log.json"
+
+class AFRSyncRequest(AFRBaseModel):
+    feature_name: str = "One Click Feature Builder"
+    target_route: str = "one-click-feature"
+    backend_route: str = "one-click-feature-api"
+    priority: str = "High"
+    status: str = "built"
+    note: str = "Synced from Agent Chain Runner"
+
+def afr_read_json(path, default):
+    try:
+        if path.exists():
+            return AFRJson.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return default
+
+def afr_write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(AFRJson.dumps(data, indent=2), encoding="utf-8")
+
+def afr_safe_route(route):
+    clean = route.strip().replace("\\", "/").strip("/")
+    clean = AFRRe.sub(r"[^a-zA-Z0-9_/-]", "-", clean)
+    clean = clean.strip("/")
+    if not clean:
+        clean = "generated-chain-page"
+    return clean
+
+def afr_safe_id(name):
+    clean = AFRRe.sub(r"[^a-zA-Z0-9_-]", "-", name.strip().lower())
+    clean = clean.strip("-")
+    if not clean:
+        clean = "feature"
+    return clean
+
+def afr_add_sync_log(item):
+    log = afr_read_json(AFR_SYNC_LOG_FILE, [])
+    log.insert(0, item)
+    afr_write_json(AFR_SYNC_LOG_FILE, log[:100])
+
+def afr_latest_by_route(path, target_route):
+    items = afr_read_json(path, [])
+    safe_route = afr_safe_route(target_route)
+
+    for item in items:
+        if item.get("target_route") == safe_route:
+            return item
+
+    return None
+
+def afr_latest_chain_for_feature(feature_name):
+    history = afr_read_json(AFR_CHAIN_HISTORY_FILE, [])
+
+    for item in history:
+        if item.get("feature_name", "").strip().lower() == feature_name.strip().lower():
+            return item
+
+    if history:
+        return history[0]
+
+    return None
+
+def afr_extract_files(chain_run):
+    files = []
+
+    if not chain_run:
+        return files
+
+    for step in chain_run.get("steps", []):
+        file_name = step.get("file", "")
+        if file_name:
+            files.append({
+                "agent": step.get("agent", ""),
+                "status": step.get("status", ""),
+                "file": file_name
+            })
+
+    return files
+
+@app.post("/agent-chain-runner/sync-feature-registry")
+def agent_chain_runner_sync_feature_registry(request: AFRSyncRequest):
+    try:
+        AFR_MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+
+        safe_route = afr_safe_route(request.target_route)
+        feature_id = afr_safe_id(request.feature_name)
+
+        registry = afr_read_json(AFR_FEATURE_REGISTRY_FILE, [])
+
+        if not isinstance(registry, list):
+            registry = []
+
+        chain_run = afr_latest_chain_for_feature(request.feature_name)
+        latest_install = afr_latest_by_route(AFR_INSTALL_LOG_FILE, safe_route)
+        latest_qa = afr_latest_by_route(AFR_QA_LOG_FILE, safe_route)
+        latest_rollback = afr_latest_by_route(AFR_ROLLBACK_LOG_FILE, safe_route)
+
+        qa_status = "unknown"
+        if latest_qa:
+            qa_status = latest_qa.get("status", "unknown")
+
+        install_status = "not_installed"
+        if latest_install:
+            install_status = latest_install.get("status", "installed")
+
+        rollback_status = "not_rolled_back"
+        if latest_rollback:
+            rollback_status = latest_rollback.get("status", "rolled_back")
+
+        final_status = request.status
+
+        if rollback_status == "rolled_back":
+            final_status = "rolled_back"
+        elif qa_status == "passed" and install_status == "installed":
+            final_status = "installed_and_qa_passed"
+        elif qa_status == "failed":
+            final_status = "qa_failed"
+        elif install_status == "installed":
+            final_status = "installed"
+        elif chain_run:
+            final_status = chain_run.get("status", request.status)
+
+        now = AFRDatetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        feature_item = {
+            "id": feature_id,
+            "name": request.feature_name,
+            "feature_name": request.feature_name,
+            "priority": request.priority,
+            "status": final_status,
+            "source": "agent_chain_runner",
+            "frontend_route": "/" + safe_route,
+            "backend_route": "/" + afr_safe_route(request.backend_route),
+            "target_route": safe_route,
+            "note": request.note,
+            "qa_status": qa_status,
+            "install_status": install_status,
+            "rollback_status": rollback_status,
+            "chain_status": chain_run.get("status", "unknown") if chain_run else "unknown",
+            "generated_files": afr_extract_files(chain_run),
+            "last_chain_run": chain_run,
+            "latest_install": latest_install,
+            "latest_qa": latest_qa,
+            "latest_rollback": latest_rollback,
+            "updated_at": now,
+            "created_at": now
+        }
+
+        existing_index = -1
+
+        for index, item in enumerate(registry):
+            existing_id = item.get("id") or afr_safe_id(item.get("name", item.get("feature_name", "")))
+            existing_route = item.get("target_route", "").strip("/")
+            if existing_id == feature_id or existing_route == safe_route:
+                existing_index = index
+                break
+
+        if existing_index >= 0:
+            old_item = registry[existing_index]
+            feature_item["created_at"] = old_item.get("created_at", now)
+            merged = {**old_item, **feature_item}
+            registry[existing_index] = merged
+            saved_item = merged
+            action = "updated"
+        else:
+            registry.insert(0, feature_item)
+            saved_item = feature_item
+            action = "created"
+
+        afr_write_json(AFR_FEATURE_REGISTRY_FILE, registry)
+
+        sync_item = {
+            "action": action,
+            "feature_name": request.feature_name,
+            "target_route": safe_route,
+            "status": final_status,
+            "synced_at": now,
+            "registry_file": str(AFR_FEATURE_REGISTRY_FILE)
+        }
+
+        afr_add_sync_log(sync_item)
+
+        return {
+            "ok": True,
+            "message": f"Feature Registry {action} successfully.",
+            "action": action,
+            "feature": saved_item,
+            "sync": sync_item
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Feature Registry sync failed.",
+            "error": str(error)
+        }
+
+@app.get("/agent-chain-runner/feature-registry-sync-history")
+def agent_chain_runner_feature_registry_sync_history():
+    try:
+        return {
+            "ok": True,
+            "history": afr_read_json(AFR_SYNC_LOG_FILE, [])
+        }
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to load Feature Registry sync history.",
+            "error": str(error),
+            "history": []
+        }
