@@ -9173,3 +9173,241 @@ def agent_chain_runner_feature_registry_sync_history():
             "error": str(error),
             "history": []
         }
+
+# ============================================================
+# Agent Chain Runner Project Brain Sync v1
+# ============================================================
+
+from pydantic import BaseModel as APBBaseModel
+from pathlib import Path as APBPath
+from datetime import datetime as APBDatetime
+import json as APBJson
+import re as APBRe
+
+APB_BASE_DIR = APBPath(__file__).resolve().parents[2]
+APB_MEMORY_DIR = APB_BASE_DIR / "memory"
+APB_CHAIN_HISTORY_FILE = APB_MEMORY_DIR / "agent_chain_runner_history.json"
+APB_FEATURE_REGISTRY_FILE = APB_MEMORY_DIR / "feature_registry.json"
+APB_INSTALL_LOG_FILE = APB_MEMORY_DIR / "agent_chain_safe_install_log.json"
+APB_QA_LOG_FILE = APB_MEMORY_DIR / "agent_chain_install_qa_log.json"
+APB_ROLLBACK_LOG_FILE = APB_MEMORY_DIR / "agent_chain_rollback_log.json"
+APB_PROJECT_BRAIN_FILE = APB_MEMORY_DIR / "project_brain.md"
+APB_LONG_MEMORY_FILE = APB_MEMORY_DIR / "long_term_memory.md"
+APB_SYNC_LOG_FILE = APB_MEMORY_DIR / "agent_chain_project_brain_sync_log.json"
+
+class APBSyncRequest(APBBaseModel):
+    feature_name: str = "One Click Feature Builder"
+    target_route: str = "one-click-feature"
+    backend_route: str = "one-click-feature-api"
+    priority: str = "High"
+    note: str = "Synced from Agent Chain Runner"
+
+def apb_read_json(path, default):
+    try:
+        if path.exists():
+            return APBJson.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return default
+
+def apb_write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(APBJson.dumps(data, indent=2), encoding="utf-8")
+
+def apb_read_text(path):
+    try:
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+    except Exception:
+        pass
+    return ""
+
+def apb_write_text(path, text):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+def apb_safe_route(route):
+    clean = route.strip().replace("\\", "/").strip("/")
+    clean = APBRe.sub(r"[^a-zA-Z0-9_/-]", "-", clean)
+    clean = clean.strip("/")
+    if not clean:
+        clean = "generated-chain-page"
+    return clean
+
+def apb_latest_by_route(path, target_route):
+    items = apb_read_json(path, [])
+    safe_route = apb_safe_route(target_route)
+
+    for item in items:
+        if item.get("target_route") == safe_route:
+            return item
+
+    return None
+
+def apb_latest_chain_for_feature(feature_name):
+    history = apb_read_json(APB_CHAIN_HISTORY_FILE, [])
+
+    for item in history:
+        if item.get("feature_name", "").strip().lower() == feature_name.strip().lower():
+            return item
+
+    if history:
+        return history[0]
+
+    return None
+
+def apb_feature_registry_item(feature_name, target_route):
+    registry = apb_read_json(APB_FEATURE_REGISTRY_FILE, [])
+    safe_route = apb_safe_route(target_route)
+
+    if not isinstance(registry, list):
+        return None
+
+    for item in registry:
+        name = item.get("feature_name") or item.get("name") or ""
+        route = item.get("target_route", "").strip("/")
+        if name.strip().lower() == feature_name.strip().lower() or route == safe_route:
+            return item
+
+    return None
+
+def apb_extract_files(chain_run):
+    if not chain_run:
+        return []
+
+    files = []
+
+    for step in chain_run.get("steps", []):
+        file_name = step.get("file", "")
+        if file_name:
+            files.append(f"- {step.get('agent', 'Agent')}: {file_name} ({step.get('status', 'unknown')})")
+
+    return files
+
+def apb_make_update_block(request, chain_run, registry_item, install_item, qa_item, rollback_item):
+    now = APBDatetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    safe_route = apb_safe_route(request.target_route)
+
+    chain_status = chain_run.get("status", "unknown") if chain_run else "unknown"
+    qa_status = qa_item.get("status", "unknown") if qa_item else "unknown"
+    install_status = install_item.get("status", "not_installed") if install_item else "not_installed"
+    rollback_status = rollback_item.get("status", "not_rolled_back") if rollback_item else "not_rolled_back"
+    registry_status = registry_item.get("status", "not_synced") if registry_item else "not_synced"
+
+    files = apb_extract_files(chain_run)
+    files_text = "\n".join(files) if files else "- No generated files found yet."
+
+    return f"""
+## Agent Chain Update — {request.feature_name}
+
+Updated at: {now}
+
+### Feature
+- Name: {request.feature_name}
+- Priority: {request.priority}
+- Frontend route: /{safe_route}
+- Backend route: /{apb_safe_route(request.backend_route)}
+- Note: {request.note}
+
+### Current Status
+- Chain status: {chain_status}
+- Registry status: {registry_status}
+- Install status: {install_status}
+- QA status: {qa_status}
+- Rollback status: {rollback_status}
+
+### Generated Files / Reports
+{files_text}
+
+### Decision
+This feature has been processed through Agent Chain Runner v1. Use this state as the current project truth before continuing new agent work.
+
+---
+"""
+
+def apb_append_unique_block(path, title_marker, block):
+    existing = apb_read_text(path)
+
+    if title_marker in existing:
+        # Keep old history and append latest block again with timestamp.
+        updated = existing.rstrip() + "\n\n" + block.strip() + "\n"
+    else:
+        updated = existing.rstrip() + "\n\n" + block.strip() + "\n"
+
+    apb_write_text(path, updated)
+
+def apb_add_sync_log(item):
+    log = apb_read_json(APB_SYNC_LOG_FILE, [])
+    log.insert(0, item)
+    apb_write_json(APB_SYNC_LOG_FILE, log[:100])
+
+@app.post("/agent-chain-runner/sync-project-brain")
+def agent_chain_runner_sync_project_brain(request: APBSyncRequest):
+    try:
+        APB_MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+
+        safe_route = apb_safe_route(request.target_route)
+
+        chain_run = apb_latest_chain_for_feature(request.feature_name)
+        registry_item = apb_feature_registry_item(request.feature_name, safe_route)
+        install_item = apb_latest_by_route(APB_INSTALL_LOG_FILE, safe_route)
+        qa_item = apb_latest_by_route(APB_QA_LOG_FILE, safe_route)
+        rollback_item = apb_latest_by_route(APB_ROLLBACK_LOG_FILE, safe_route)
+
+        block = apb_make_update_block(
+            request=request,
+            chain_run=chain_run,
+            registry_item=registry_item,
+            install_item=install_item,
+            qa_item=qa_item,
+            rollback_item=rollback_item
+        )
+
+        title_marker = f"## Agent Chain Update — {request.feature_name}"
+
+        apb_append_unique_block(APB_PROJECT_BRAIN_FILE, title_marker, block)
+        apb_append_unique_block(APB_LONG_MEMORY_FILE, title_marker, block)
+
+        now = APBDatetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        sync_item = {
+            "feature_name": request.feature_name,
+            "target_route": safe_route,
+            "backend_route": apb_safe_route(request.backend_route),
+            "priority": request.priority,
+            "project_brain_file": str(APB_PROJECT_BRAIN_FILE),
+            "long_memory_file": str(APB_LONG_MEMORY_FILE),
+            "synced_at": now,
+            "status": "synced"
+        }
+
+        apb_add_sync_log(sync_item)
+
+        return {
+            "ok": True,
+            "message": "Project Brain updated successfully.",
+            "sync": sync_item,
+            "block": block
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Project Brain sync failed.",
+            "error": str(error)
+        }
+
+@app.get("/agent-chain-runner/project-brain-sync-history")
+def agent_chain_runner_project_brain_sync_history():
+    try:
+        return {
+            "ok": True,
+            "history": apb_read_json(APB_SYNC_LOG_FILE, [])
+        }
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to load Project Brain sync history.",
+            "error": str(error),
+            "history": []
+        }
