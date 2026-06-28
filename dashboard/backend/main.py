@@ -8797,3 +8797,148 @@ def agent_chain_runner_qa_after_install_history():
             "error": str(error),
             "history": []
         }
+
+# ============================================================
+# Agent Chain Runner Rollback v1
+# ============================================================
+
+from pydantic import BaseModel as ARBBaseModel
+from pathlib import Path as ARBPath
+from datetime import datetime as ARBDatetime
+import json as ARBJson
+import re as ARBRe
+
+ARB_BASE_DIR = ARBPath(__file__).resolve().parents[2]
+ARB_MEMORY_DIR = ARB_BASE_DIR / "memory"
+ARB_FRONTEND_ROOT = ARBPath.home() / "dashboard" / "frontend"
+ARB_INSTALL_LOG_FILE = ARB_MEMORY_DIR / "agent_chain_safe_install_log.json"
+ARB_ROLLBACK_LOG_FILE = ARB_MEMORY_DIR / "agent_chain_rollback_log.json"
+
+class ARBRollbackRequest(ARBBaseModel):
+    target_route: str = "one-click-feature"
+    approval_text: str = ""
+    reason: str = "Rollback after failed QA"
+
+def arb_read_json(path, default):
+    try:
+        if path.exists():
+            return ARBJson.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return default
+
+def arb_write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(ARBJson.dumps(data, indent=2), encoding="utf-8")
+
+def arb_safe_route(route):
+    clean = route.strip().replace("\\", "/").strip("/")
+    clean = ARBRe.sub(r"[^a-zA-Z0-9_/-]", "-", clean)
+    clean = clean.strip("/")
+    if not clean:
+        clean = "generated-chain-page"
+    return clean
+
+def arb_add_rollback_log(item):
+    log = arb_read_json(ARB_ROLLBACK_LOG_FILE, [])
+    log.insert(0, item)
+    arb_write_json(ARB_ROLLBACK_LOG_FILE, log[:100])
+
+def arb_find_latest_install(target_route):
+    install_log = arb_read_json(ARB_INSTALL_LOG_FILE, [])
+    safe_route = arb_safe_route(target_route)
+
+    for item in install_log:
+        if item.get("target_route") == safe_route:
+            return item
+
+    return None
+
+@app.get("/agent-chain-runner/rollback-history")
+def agent_chain_runner_rollback_history():
+    try:
+        return {
+            "ok": True,
+            "history": arb_read_json(ARB_ROLLBACK_LOG_FILE, [])
+        }
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to load rollback history.",
+            "error": str(error),
+            "history": []
+        }
+
+@app.post("/agent-chain-runner/rollback-last-install")
+def agent_chain_runner_rollback_last_install(request: ARBRollbackRequest):
+    try:
+        if request.approval_text.strip() != "ROLLBACK CHAIN INSTALL":
+            return {
+                "ok": False,
+                "message": "Approval text is wrong. Type ROLLBACK CHAIN INSTALL exactly."
+            }
+
+        safe_route = arb_safe_route(request.target_route)
+        latest_install = arb_find_latest_install(safe_route)
+
+        if not latest_install:
+            return {
+                "ok": False,
+                "message": "No safe install record found for this route.",
+                "target_route": safe_route
+            }
+
+        backup_path_raw = latest_install.get("backup_path", "")
+        target_path_raw = latest_install.get("target_path", "")
+
+        if not backup_path_raw:
+            return {
+                "ok": False,
+                "message": "No backup exists for this install. This usually means the route was created for the first time.",
+                "target_route": safe_route,
+                "install": latest_install
+            }
+
+        backup_path = ARBPath(backup_path_raw)
+        target_path = ARBPath(target_path_raw)
+
+        if not backup_path.exists():
+            return {
+                "ok": False,
+                "message": "Backup file not found on disk.",
+                "backup_path": str(backup_path)
+            }
+
+        if not str(target_path).startswith(str(ARB_FRONTEND_ROOT)):
+            return {
+                "ok": False,
+                "message": "Unsafe target path blocked.",
+                "target_path": str(target_path)
+            }
+
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_text(backup_path.read_text(encoding="utf-8"), encoding="utf-8")
+
+        rollback_item = {
+            "target_route": safe_route,
+            "target_path": str(target_path),
+            "backup_path": str(backup_path),
+            "reason": request.reason,
+            "rolled_back_at": ARBDatetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "status": "rolled_back"
+        }
+
+        arb_add_rollback_log(rollback_item)
+
+        return {
+            "ok": True,
+            "message": "Last chain install rolled back successfully.",
+            "rollback": rollback_item
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Rollback failed.",
+            "error": str(error)
+        }
