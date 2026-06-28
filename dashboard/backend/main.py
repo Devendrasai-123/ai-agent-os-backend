@@ -9411,3 +9411,315 @@ def agent_chain_runner_project_brain_sync_history():
             "error": str(error),
             "history": []
         }
+
+# ============================================================
+# Agent Chain Runner One Click Complete Flow v1
+# ============================================================
+
+from pydantic import BaseModel as AOCBaseModel
+from pathlib import Path as AOCPath
+from datetime import datetime as AOCDatetime
+import json as AOCJson
+
+AOC_BASE_DIR = AOCPath(__file__).resolve().parents[2]
+AOC_MEMORY_DIR = AOC_BASE_DIR / "memory"
+AOC_COMPLETE_FLOW_HISTORY_FILE = AOC_MEMORY_DIR / "agent_chain_complete_flow_history.json"
+
+class AOCCompleteFlowRequest(AOCBaseModel):
+    feature_name: str = "One Click Feature Builder"
+    task: str = "Build a safe generated dashboard feature from one click."
+    priority: str = "High"
+    style: str = "Dark AI dashboard"
+    frontend_route: str = "one-click-feature"
+    backend_route: str = "one-click-feature-api"
+    approval_text: str = ""
+    run_chain_qa: bool = False
+    note: str = "One click complete flow"
+
+def aoc_read_json(path, default):
+    try:
+        if path.exists():
+            return AOCJson.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return default
+
+def aoc_write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(AOCJson.dumps(data, indent=2), encoding="utf-8")
+
+def aoc_add_history(item):
+    history = aoc_read_json(AOC_COMPLETE_FLOW_HISTORY_FILE, [])
+    history.insert(0, item)
+    aoc_write_json(AOC_COMPLETE_FLOW_HISTORY_FILE, history[:100])
+
+def aoc_result_ok(result):
+    return isinstance(result, dict) and bool(result.get("ok"))
+
+def aoc_call(step_name, function_name, class_name, payload):
+    try:
+        func = globals().get(function_name)
+        cls = globals().get(class_name)
+
+        if not callable(func):
+            return {
+                "step": step_name,
+                "ok": False,
+                "message": f"Missing function: {function_name}"
+            }
+
+        if cls is None:
+            return {
+                "step": step_name,
+                "ok": False,
+                "message": f"Missing request class: {class_name}"
+            }
+
+        request_obj = cls(**payload)
+        result = func(request_obj)
+
+        if not isinstance(result, dict):
+            return {
+                "step": step_name,
+                "ok": False,
+                "message": "Step returned non-dict result.",
+                "raw": str(result)
+            }
+
+        return {
+            "step": step_name,
+            "ok": bool(result.get("ok")),
+            "message": result.get("message", ""),
+            "result": result
+        }
+
+    except Exception as error:
+        return {
+            "step": step_name,
+            "ok": False,
+            "message": str(error)
+        }
+
+def aoc_find_frontend_file(chain_result):
+    try:
+        run = chain_result.get("run", {})
+        for step in run.get("steps", []):
+            file_name = step.get("file", "")
+            if file_name.endswith(".tsx"):
+                return file_name
+    except Exception:
+        pass
+    return ""
+
+@app.post("/agent-chain-runner/complete-flow")
+def agent_chain_runner_complete_flow(request: AOCCompleteFlowRequest):
+    try:
+        if request.approval_text.strip() != "APPROVE FULL CHAIN FLOW":
+            return {
+                "ok": False,
+                "message": "Approval text is wrong. Type APPROVE FULL CHAIN FLOW exactly."
+            }
+
+        started_at = AOCDatetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        steps = []
+
+        chain_step = aoc_call(
+            "Run Agent Chain",
+            "agent_chain_runner_run",
+            "ACRRunRequest",
+            {
+                "feature_name": request.feature_name,
+                "task": request.task,
+                "priority": request.priority,
+                "style": request.style,
+                "frontend_route": request.frontend_route,
+                "backend_route": request.backend_route,
+                "run_qa": request.run_chain_qa
+            }
+        )
+        steps.append(chain_step)
+
+        if not chain_step.get("ok"):
+            flow = {
+                "feature_name": request.feature_name,
+                "status": "failed",
+                "failed_at": "Run Agent Chain",
+                "steps": steps,
+                "created_at": started_at
+            }
+            aoc_add_history(flow)
+            return {"ok": False, "message": "Complete flow stopped at agent chain.", "flow": flow}
+
+        frontend_file = aoc_find_frontend_file(chain_step.get("result", {}))
+
+        if not frontend_file:
+            flow = {
+                "feature_name": request.feature_name,
+                "status": "failed",
+                "failed_at": "Find Frontend File",
+                "steps": steps,
+                "created_at": started_at
+            }
+            aoc_add_history(flow)
+            return {"ok": False, "message": "No generated frontend .tsx file found.", "flow": flow}
+
+        preview_step = aoc_call(
+            "Preview Safe Install",
+            "agent_chain_runner_safe_install_preview",
+            "ACSPreviewRequest",
+            {
+                "file_name": frontend_file,
+                "target_route": request.frontend_route
+            }
+        )
+        steps.append(preview_step)
+
+        if not preview_step.get("ok"):
+            flow = {
+                "feature_name": request.feature_name,
+                "status": "failed",
+                "failed_at": "Preview Safe Install",
+                "steps": steps,
+                "created_at": started_at
+            }
+            aoc_add_history(flow)
+            return {"ok": False, "message": "Complete flow stopped at safe install preview.", "flow": flow}
+
+        install_step = aoc_call(
+            "Approve Safe Install",
+            "agent_chain_runner_safe_install_approve",
+            "ACSApproveRequest",
+            {
+                "file_name": frontend_file,
+                "target_route": request.frontend_route,
+                "approval_text": "APPROVE CHAIN INSTALL"
+            }
+        )
+        steps.append(install_step)
+
+        if not install_step.get("ok"):
+            flow = {
+                "feature_name": request.feature_name,
+                "status": "failed",
+                "failed_at": "Approve Safe Install",
+                "steps": steps,
+                "created_at": started_at
+            }
+            aoc_add_history(flow)
+            return {"ok": False, "message": "Complete flow stopped at safe install approve.", "flow": flow}
+
+        qa_step = aoc_call(
+            "Run QA After Install",
+            "agent_chain_runner_qa_after_install",
+            "ACQRunRequest",
+            {
+                "target_route": request.frontend_route,
+                "note": "QA from one click complete flow"
+            }
+        )
+        steps.append(qa_step)
+
+        qa_passed = False
+        try:
+            qa_passed = bool(qa_step.get("result", {}).get("result", {}).get("passed"))
+        except Exception:
+            qa_passed = False
+
+        registry_step = aoc_call(
+            "Sync Feature Registry",
+            "agent_chain_runner_sync_feature_registry",
+            "AFRSyncRequest",
+            {
+                "feature_name": request.feature_name,
+                "target_route": request.frontend_route,
+                "backend_route": request.backend_route,
+                "priority": request.priority,
+                "status": "installed_and_qa_passed" if qa_passed else "qa_failed",
+                "note": "Synced from one click complete flow"
+            }
+        )
+        steps.append(registry_step)
+
+        brain_step = aoc_call(
+            "Sync Project Brain",
+            "agent_chain_runner_sync_project_brain",
+            "APBSyncRequest",
+            {
+                "feature_name": request.feature_name,
+                "target_route": request.frontend_route,
+                "backend_route": request.backend_route,
+                "priority": request.priority,
+                "note": "Synced from one click complete flow"
+            }
+        )
+        steps.append(brain_step)
+
+        handoff_step = aoc_call(
+            "Export New Chat Handoff",
+            "agent_chain_runner_export_handoff",
+            "AHEExportRequest",
+            {
+                "feature_name": request.feature_name,
+                "target_route": request.frontend_route,
+                "backend_route": request.backend_route,
+                "next_task": "Continue building the next AI Agent OS feature step by step.",
+                "note": "Exported from one click complete flow"
+            }
+        )
+        steps.append(handoff_step)
+
+        all_non_qa_ok = (
+            chain_step.get("ok")
+            and preview_step.get("ok")
+            and install_step.get("ok")
+            and registry_step.get("ok")
+            and brain_step.get("ok")
+            and handoff_step.get("ok")
+        )
+
+        final_status = "completed_and_qa_passed" if all_non_qa_ok and qa_passed else "completed_with_attention"
+
+        flow = {
+            "feature_name": request.feature_name,
+            "task": request.task,
+            "priority": request.priority,
+            "style": request.style,
+            "frontend_route": request.frontend_route,
+            "backend_route": request.backend_route,
+            "generated_frontend_file": frontend_file,
+            "status": final_status,
+            "qa_passed": qa_passed,
+            "steps": steps,
+            "created_at": started_at,
+            "finished_at": AOCDatetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+        aoc_add_history(flow)
+
+        return {
+            "ok": True,
+            "message": "One click complete flow finished.",
+            "flow": flow
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "One click complete flow failed.",
+            "error": str(error)
+        }
+
+@app.get("/agent-chain-runner/complete-flow-history")
+def agent_chain_runner_complete_flow_history():
+    try:
+        return {
+            "ok": True,
+            "history": aoc_read_json(AOC_COMPLETE_FLOW_HISTORY_FILE, [])
+        }
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to load complete flow history.",
+            "error": str(error),
+            "history": []
+        }
