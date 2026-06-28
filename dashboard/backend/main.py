@@ -10293,3 +10293,276 @@ def agent_chain_runner_live_timeline():
             "error": str(error),
             "events": []
         }
+
+# ============================================================
+# Agent Chain Runner Run Lock v1
+# Prevent duplicate complete flow runs
+# ============================================================
+
+from pydantic import BaseModel as ARLBaseModel
+from pathlib import Path as ARLPath
+from datetime import datetime as ARLDatetime
+import json as ARLJson
+import time as ARLTime
+
+ARL_BASE_DIR = ARLPath(__file__).resolve().parents[2]
+ARL_MEMORY_DIR = ARL_BASE_DIR / "memory"
+ARL_LOCK_FILE = ARL_MEMORY_DIR / "agent_chain_run_lock.json"
+ARL_LOCK_HISTORY_FILE = ARL_MEMORY_DIR / "agent_chain_run_lock_history.json"
+
+class ARLLockedSafeFlowRequest(ARLBaseModel):
+    feature_name: str = "One Click Feature Builder"
+    task: str = "Build a safe generated dashboard feature from one click."
+    priority: str = "High"
+    style: str = "Dark AI dashboard"
+    frontend_route: str = "one-click-feature"
+    backend_route: str = "one-click-feature-api"
+    approval_text: str = ""
+    run_chain_qa: bool = False
+    auto_rollback_on_qa_fail: bool = True
+    note: str = "Locked safe complete flow"
+
+class ARLClearLockRequest(ARLBaseModel):
+    approval_text: str = ""
+    reason: str = "Manual clear run lock"
+
+def arl_read_json(path, default):
+    try:
+        if path.exists():
+            return ARLJson.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return default
+
+def arl_write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(ARLJson.dumps(data, indent=2), encoding="utf-8")
+
+def arl_now():
+    return ARLDatetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def arl_now_epoch():
+    return int(ARLTime.time())
+
+def arl_add_history(item):
+    history = arl_read_json(ARL_LOCK_HISTORY_FILE, [])
+    history.insert(0, item)
+    arl_write_json(ARL_LOCK_HISTORY_FILE, history[:100])
+
+def arl_get_lock():
+    lock = arl_read_json(ARL_LOCK_FILE, {})
+    if not isinstance(lock, dict):
+        return {}
+    return lock
+
+def arl_is_locked():
+    lock = arl_get_lock()
+
+    if not lock.get("locked"):
+        return False, lock, "not_locked"
+
+    started_epoch = int(lock.get("started_epoch", 0))
+    age_seconds = arl_now_epoch() - started_epoch
+
+    # Auto-expire lock after 30 minutes in case server crashed.
+    if age_seconds > 1800:
+        lock["locked"] = False
+        lock["status"] = "expired"
+        lock["expired_at"] = arl_now()
+        arl_write_json(ARL_LOCK_FILE, lock)
+        arl_add_history({
+            "action": "expired",
+            "feature_name": lock.get("feature_name", ""),
+            "created_at": arl_now(),
+            "age_seconds": age_seconds
+        })
+        return False, lock, "expired"
+
+    return True, lock, "locked"
+
+def arl_set_lock(feature_name, route, note):
+    lock = {
+        "locked": True,
+        "status": "running",
+        "feature_name": feature_name,
+        "frontend_route": route,
+        "note": note,
+        "started_at": arl_now(),
+        "started_epoch": arl_now_epoch()
+    }
+    arl_write_json(ARL_LOCK_FILE, lock)
+    arl_add_history({
+        "action": "locked",
+        "feature_name": feature_name,
+        "frontend_route": route,
+        "created_at": arl_now()
+    })
+    return lock
+
+def arl_release_lock(feature_name, status, message):
+    lock = arl_get_lock()
+    lock["locked"] = False
+    lock["status"] = status
+    lock["message"] = message
+    lock["finished_at"] = arl_now()
+    arl_write_json(ARL_LOCK_FILE, lock)
+    arl_add_history({
+        "action": "released",
+        "feature_name": feature_name,
+        "status": status,
+        "message": message,
+        "created_at": arl_now()
+    })
+    return lock
+
+@app.get("/agent-chain-runner/run-lock-status")
+def agent_chain_runner_run_lock_status():
+    try:
+        locked, lock, reason = arl_is_locked()
+
+        return {
+            "ok": True,
+            "locked": locked,
+            "reason": reason,
+            "lock": lock
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to read run lock status.",
+            "error": str(error),
+            "locked": False
+        }
+
+@app.get("/agent-chain-runner/run-lock-history")
+def agent_chain_runner_run_lock_history():
+    try:
+        return {
+            "ok": True,
+            "history": arl_read_json(ARL_LOCK_HISTORY_FILE, [])
+        }
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to load run lock history.",
+            "error": str(error),
+            "history": []
+        }
+
+@app.post("/agent-chain-runner/clear-run-lock")
+def agent_chain_runner_clear_run_lock(request: ARLClearLockRequest):
+    try:
+        if request.approval_text.strip() != "CLEAR RUN LOCK":
+            return {
+                "ok": False,
+                "message": "Approval text is wrong. Type CLEAR RUN LOCK exactly."
+            }
+
+        lock = arl_get_lock()
+        lock["locked"] = False
+        lock["status"] = "manually_cleared"
+        lock["reason"] = request.reason
+        lock["cleared_at"] = arl_now()
+        arl_write_json(ARL_LOCK_FILE, lock)
+
+        arl_add_history({
+            "action": "manually_cleared",
+            "reason": request.reason,
+            "created_at": arl_now()
+        })
+
+        return {
+            "ok": True,
+            "message": "Run lock cleared.",
+            "lock": lock
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to clear run lock.",
+            "error": str(error)
+        }
+
+@app.post("/agent-chain-runner/complete-flow-safe-locked")
+def agent_chain_runner_complete_flow_safe_locked(request: ARLLockedSafeFlowRequest):
+    try:
+        locked, current_lock, reason = arl_is_locked()
+
+        if locked:
+            return {
+                "ok": False,
+                "message": "Another agent chain flow is already running. Wait until it finishes or clear the lock.",
+                "locked": True,
+                "lock": current_lock
+            }
+
+        arl_set_lock(
+            feature_name=request.feature_name,
+            route=request.frontend_route,
+            note=request.note
+        )
+
+        func = globals().get("agent_chain_runner_complete_flow_safe")
+        cls = globals().get("ACFSafeCompleteFlowRequest")
+
+        if not callable(func) or cls is None:
+            arl_release_lock(
+                feature_name=request.feature_name,
+                status="failed",
+                message="Safe Complete Flow v2 function or request class is missing."
+            )
+            return {
+                "ok": False,
+                "message": "Safe Complete Flow v2 is missing. Build that feature first."
+            }
+
+        safe_request = cls(
+            feature_name=request.feature_name,
+            task=request.task,
+            priority=request.priority,
+            style=request.style,
+            frontend_route=request.frontend_route,
+            backend_route=request.backend_route,
+            approval_text=request.approval_text,
+            run_chain_qa=request.run_chain_qa,
+            auto_rollback_on_qa_fail=request.auto_rollback_on_qa_fail,
+            note=request.note
+        )
+
+        result = func(safe_request)
+
+        flow_status = "completed"
+        message = "Locked safe complete flow finished."
+
+        if isinstance(result, dict):
+            flow = result.get("flow", {})
+            flow_status = flow.get("status", "completed") if isinstance(flow, dict) else "completed"
+            message = result.get("message", message)
+
+        arl_release_lock(
+            feature_name=request.feature_name,
+            status=flow_status,
+            message=message
+        )
+
+        return {
+            "ok": True,
+            "message": "Locked safe complete flow finished.",
+            "locked": False,
+            "result": result
+        }
+
+    except Exception as error:
+        arl_release_lock(
+            feature_name=request.feature_name,
+            status="failed",
+            message=str(error)
+        )
+
+        return {
+            "ok": False,
+            "message": "Locked safe complete flow failed.",
+            "error": str(error)
+        }
