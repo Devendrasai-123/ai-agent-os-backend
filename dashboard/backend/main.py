@@ -10925,3 +10925,265 @@ def agent_chain_runner_approval_center_reject(request: AACRejectRequest):
             "message": "Reject failed.",
             "error": str(error)
         }
+
+# ============================================================
+# Agent Chain Runner Run Report Download v1
+# Generates markdown report for latest flow/run
+# ============================================================
+
+from pydantic import BaseModel as ARRBaseModel
+from pathlib import Path as ARRPath
+from datetime import datetime as ARRDatetime
+import json as ARRJson
+import re as ARRRe
+
+ARR_BASE_DIR = ARRPath(__file__).resolve().parents[2]
+ARR_MEMORY_DIR = ARR_BASE_DIR / "memory"
+ARR_REPORTS_DIR = ARR_BASE_DIR / "generated_reports"
+
+ARR_CHAIN_HISTORY_FILE = ARR_MEMORY_DIR / "agent_chain_runner_history.json"
+ARR_COMPLETE_FLOW_HISTORY_FILE = ARR_MEMORY_DIR / "agent_chain_complete_flow_history.json"
+ARR_SAFE_COMPLETE_FLOW_HISTORY_FILE = ARR_MEMORY_DIR / "agent_chain_safe_complete_flow_history.json"
+ARR_INSTALL_LOG_FILE = ARR_MEMORY_DIR / "agent_chain_safe_install_log.json"
+ARR_QA_LOG_FILE = ARR_MEMORY_DIR / "agent_chain_install_qa_log.json"
+ARR_ROLLBACK_LOG_FILE = ARR_MEMORY_DIR / "agent_chain_rollback_log.json"
+ARR_REGISTRY_SYNC_LOG_FILE = ARR_MEMORY_DIR / "agent_chain_feature_registry_sync_log.json"
+ARR_PROJECT_BRAIN_SYNC_LOG_FILE = ARR_MEMORY_DIR / "agent_chain_project_brain_sync_log.json"
+ARR_HANDOFF_EXPORT_LOG_FILE = ARR_MEMORY_DIR / "agent_chain_handoff_export_log.json"
+ARR_APPROVAL_CENTER_FILE = ARR_MEMORY_DIR / "agent_chain_approval_center.json"
+ARR_REPORT_HISTORY_FILE = ARR_MEMORY_DIR / "agent_chain_run_report_history.json"
+
+class ARRReportRequest(ARRBaseModel):
+    feature_name: str = "One Click Feature Builder"
+    target_route: str = "one-click-feature"
+    backend_route: str = "one-click-feature-api"
+    note: str = "Generated from Agent Chain Runner UI"
+
+def arr_now():
+    return ARRDatetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def arr_read_json(path, default):
+    try:
+        if path.exists():
+            return ARRJson.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return default
+
+def arr_write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(ARRJson.dumps(data, indent=2), encoding="utf-8")
+
+def arr_write_text(path, text):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+def arr_safe_slug(value):
+    clean = str(value or "").strip().lower()
+    clean = clean.replace("\\", "/").strip("/")
+    clean = ARRRe.sub(r"[^a-z0-9_-]+", "-", clean)
+    clean = clean.strip("-")
+    return clean or "agent-chain-report"
+
+def arr_latest_for_feature(path, feature_name="", target_route=""):
+    items = arr_read_json(path, [])
+    if not isinstance(items, list):
+        return None
+
+    feature_l = str(feature_name or "").strip().lower()
+    route_l = str(target_route or "").strip().strip("/").lower()
+
+    for item in items:
+        item_feature = str(item.get("feature_name", "")).strip().lower()
+        item_route = str(item.get("target_route") or item.get("frontend_route") or "").strip().strip("/").lower()
+
+        if feature_l and item_feature == feature_l:
+            return item
+
+        if route_l and item_route == route_l:
+            return item
+
+    return items[0] if items else None
+
+def arr_latest_many(path, count=10):
+    items = arr_read_json(path, [])
+    if not isinstance(items, list):
+        return []
+    return items[:count]
+
+def arr_status_line(label, item, status_key="status"):
+    if not item:
+        return f"- {label}: not found"
+    return f"- {label}: {item.get(status_key, 'unknown')}"
+
+def arr_steps_text(run):
+    if not run:
+        return "- No chain steps found."
+
+    lines = []
+
+    for step in run.get("steps", []):
+        name = step.get("agent") or step.get("step") or "Step"
+        status = step.get("status", "")
+        ok = step.get("ok", "")
+        file_name = step.get("file", "")
+        message = step.get("message", "")
+
+        state = status or f"ok={ok}"
+        extra = file_name or message
+        lines.append(f"- {name}: {state} — {extra}")
+
+    return "\n".join(lines) if lines else "- No chain steps found."
+
+def arr_approval_text(items):
+    if not items:
+        return "- No approval items found."
+
+    lines = []
+    for item in items[:10]:
+        lines.append(
+            f"- {item.get('label', item.get('action_type', 'Approval'))}: "
+            f"{item.get('status', 'unknown')} — /{item.get('target_route', '')} — {item.get('created_at', '')}"
+        )
+
+    return "\n".join(lines)
+
+def arr_make_report(request):
+    feature_name = request.feature_name
+    target_route = request.target_route.strip().strip("/")
+    backend_route = request.backend_route.strip().strip("/")
+
+    chain_run = arr_latest_for_feature(ARR_CHAIN_HISTORY_FILE, feature_name, target_route)
+    complete_flow = arr_latest_for_feature(ARR_COMPLETE_FLOW_HISTORY_FILE, feature_name, target_route)
+    safe_flow = arr_latest_for_feature(ARR_SAFE_COMPLETE_FLOW_HISTORY_FILE, feature_name, target_route)
+    install_item = arr_latest_for_feature(ARR_INSTALL_LOG_FILE, feature_name, target_route)
+    qa_item = arr_latest_for_feature(ARR_QA_LOG_FILE, feature_name, target_route)
+    rollback_item = arr_latest_for_feature(ARR_ROLLBACK_LOG_FILE, feature_name, target_route)
+    registry_item = arr_latest_for_feature(ARR_REGISTRY_SYNC_LOG_FILE, feature_name, target_route)
+    brain_item = arr_latest_for_feature(ARR_PROJECT_BRAIN_SYNC_LOG_FILE, feature_name, target_route)
+    handoff_item = arr_latest_for_feature(ARR_HANDOFF_EXPORT_LOG_FILE, feature_name, target_route)
+    approvals = arr_latest_many(ARR_APPROVAL_CENTER_FILE, 10)
+
+    now = arr_now()
+
+    chain_status = chain_run.get("status", "unknown") if chain_run else "unknown"
+    safe_status = safe_flow.get("status", "unknown") if safe_flow else "unknown"
+    qa_passed = qa_item.get("passed", safe_flow.get("qa_passed", "unknown") if safe_flow else "unknown") if qa_item else "unknown"
+
+    return f"""# Agent Chain Run Report
+
+Generated at: {now}
+
+## Feature
+
+- Feature name: {feature_name}
+- Frontend route: /{target_route}
+- Backend route: /{backend_route}
+- Note: {request.note}
+
+## Executive Status
+
+- Latest chain status: {chain_status}
+- Latest safe flow status: {safe_status}
+- QA passed: {qa_passed}
+
+## System Checkpoints
+
+{arr_status_line("Agent Chain", chain_run)}
+{arr_status_line("One Click Complete Flow", complete_flow)}
+{arr_status_line("Safe Complete Flow", safe_flow)}
+{arr_status_line("Safe Install", install_item)}
+{arr_status_line("QA After Install", qa_item)}
+{arr_status_line("Rollback", rollback_item)}
+{arr_status_line("Feature Registry Sync", registry_item)}
+{arr_status_line("Project Brain Sync", brain_item)}
+{arr_status_line("Handoff Export", handoff_item)}
+
+## Agent / Flow Steps
+
+{arr_steps_text(safe_flow or complete_flow or chain_run)}
+
+## Latest Approvals
+
+{arr_approval_text(approvals)}
+
+## Important Files
+
+- Backend main file: dashboard/backend/main.py
+- Frontend page: app/agent-chain-runner/page.tsx
+- Reports folder: generated_reports
+- Memory folder: memory
+
+## Next Recommended Action
+
+Continue building the next Agent Chain Runner feature only after:
+
+1. Backend compile passes.
+2. Frontend build passes.
+3. Git status is clean or intentionally staged.
+4. Runtime/generated files are not accidentally committed.
+
+---
+"""
+
+def arr_add_report_history(item):
+    history = arr_read_json(ARR_REPORT_HISTORY_FILE, [])
+    if not isinstance(history, list):
+        history = []
+    history.insert(0, item)
+    arr_write_json(ARR_REPORT_HISTORY_FILE, history[:100])
+
+@app.post("/agent-chain-runner/run-report/generate")
+def agent_chain_runner_run_report_generate(request: ARRReportRequest):
+    try:
+        ARR_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+        report_text = arr_make_report(request)
+
+        stamp = ARRDatetime.now().strftime("%Y%m%d_%H%M%S")
+        slug = arr_safe_slug(request.feature_name)
+        file_name = f"agent_chain_run_report_{slug}_{stamp}.md"
+        report_path = ARR_REPORTS_DIR / file_name
+
+        arr_write_text(report_path, report_text)
+
+        history_item = {
+            "feature_name": request.feature_name,
+            "target_route": request.target_route.strip().strip("/"),
+            "backend_route": request.backend_route.strip().strip("/"),
+            "file_name": file_name,
+            "file_path": str(report_path),
+            "created_at": arr_now(),
+            "status": "created"
+        }
+
+        arr_add_report_history(history_item)
+
+        return {
+            "ok": True,
+            "message": "Run report generated.",
+            "report": history_item,
+            "report_text": report_text
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Run report generation failed.",
+            "error": str(error)
+        }
+
+@app.get("/agent-chain-runner/run-report/history")
+def agent_chain_runner_run_report_history():
+    try:
+        return {
+            "ok": True,
+            "history": arr_read_json(ARR_REPORT_HISTORY_FILE, [])
+        }
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to load run report history.",
+            "error": str(error),
+            "history": []
+        }
