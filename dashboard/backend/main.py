@@ -10566,3 +10566,362 @@ def agent_chain_runner_complete_flow_safe_locked(request: ARLLockedSafeFlowReque
             "message": "Locked safe complete flow failed.",
             "error": str(error)
         }
+
+# ============================================================
+# Agent Chain Runner Approval Center v1
+# Central approval queue for dangerous actions
+# ============================================================
+
+from pydantic import BaseModel as AACBaseModel
+from pathlib import Path as AACPath
+from datetime import datetime as AACDatetime
+import json as AACJson
+import uuid as AACUuid
+
+AAC_BASE_DIR = AACPath(__file__).resolve().parents[2]
+AAC_MEMORY_DIR = AAC_BASE_DIR / "memory"
+AAC_APPROVAL_FILE = AAC_MEMORY_DIR / "agent_chain_approval_center.json"
+
+class AACCreateRequest(AACBaseModel):
+    action_type: str = "safe_install"
+    feature_name: str = "One Click Feature Builder"
+    target_route: str = "one-click-feature"
+    backend_route: str = "one-click-feature-api"
+    file_name: str = ""
+    task: str = "Build a safe generated dashboard feature from one click."
+    priority: str = "High"
+    style: str = "Dark AI dashboard"
+    note: str = "Approval requested from Agent Chain Runner UI"
+    payload: dict = {}
+
+class AACApproveRequest(AACBaseModel):
+    approval_id: str
+    approval_text: str = ""
+    execute: bool = True
+
+class AACRejectRequest(AACBaseModel):
+    approval_id: str
+    reason: str = "Rejected from Approval Center"
+
+def aac_now():
+    return AACDatetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def aac_read_json(path, default):
+    try:
+        if path.exists():
+            return AACJson.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return default
+
+def aac_write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(AACJson.dumps(data, indent=2), encoding="utf-8")
+
+def aac_required_phrase(action_type):
+    phrases = {
+        "safe_install": "APPROVE CHAIN INSTALL",
+        "rollback": "ROLLBACK CHAIN INSTALL",
+        "clear_run_lock": "CLEAR RUN LOCK",
+        "locked_safe_flow": "APPROVE SAFE FULL FLOW"
+    }
+    return phrases.get(action_type, "APPROVE ACTION")
+
+def aac_action_label(action_type):
+    labels = {
+        "safe_install": "Safe Install",
+        "rollback": "Rollback Last Install",
+        "clear_run_lock": "Clear Run Lock",
+        "locked_safe_flow": "Locked Safe Full Flow"
+    }
+    return labels.get(action_type, action_type)
+
+def aac_load_items():
+    items = aac_read_json(AAC_APPROVAL_FILE, [])
+    if not isinstance(items, list):
+        return []
+    return items
+
+def aac_save_items(items):
+    aac_write_json(AAC_APPROVAL_FILE, items[:200])
+
+def aac_find_item(items, approval_id):
+    for index, item in enumerate(items):
+        if item.get("id") == approval_id:
+            return index, item
+    return -1, None
+
+def aac_call_existing(step_name, function_name, class_name, payload):
+    try:
+        func = globals().get(function_name)
+        cls = globals().get(class_name)
+
+        if not callable(func):
+            return {
+                "ok": False,
+                "message": f"Missing function: {function_name}",
+                "step": step_name
+            }
+
+        if cls is None:
+            return {
+                "ok": False,
+                "message": f"Missing request class: {class_name}",
+                "step": step_name
+            }
+
+        request_obj = cls(**payload)
+        result = func(request_obj)
+
+        if not isinstance(result, dict):
+            return {
+                "ok": False,
+                "message": "Execution returned non-dict result.",
+                "raw": str(result),
+                "step": step_name
+            }
+
+        return result
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": str(error),
+            "step": step_name
+        }
+
+def aac_execute_item(item, approval_text):
+    action_type = item.get("action_type")
+    payload = item.get("payload", {})
+    target_route = item.get("target_route", "")
+
+    if action_type == "safe_install":
+        return aac_call_existing(
+            "Safe Install",
+            "agent_chain_runner_safe_install_approve",
+            "ACSApproveRequest",
+            {
+                "file_name": payload.get("file_name", ""),
+                "target_route": target_route,
+                "approval_text": approval_text
+            }
+        )
+
+    if action_type == "rollback":
+        return aac_call_existing(
+            "Rollback Last Install",
+            "agent_chain_runner_rollback_last_install",
+            "ARBRollbackRequest",
+            {
+                "target_route": target_route,
+                "approval_text": approval_text,
+                "reason": "Executed from Approval Center"
+            }
+        )
+
+    if action_type == "clear_run_lock":
+        return aac_call_existing(
+            "Clear Run Lock",
+            "agent_chain_runner_clear_run_lock",
+            "ARLClearLockRequest",
+            {
+                "approval_text": approval_text,
+                "reason": "Executed from Approval Center"
+            }
+        )
+
+    if action_type == "locked_safe_flow":
+        return aac_call_existing(
+            "Locked Safe Full Flow",
+            "agent_chain_runner_complete_flow_safe_locked",
+            "ARLLockedSafeFlowRequest",
+            {
+                "feature_name": item.get("feature_name", "One Click Feature Builder"),
+                "task": payload.get("task", "Build a safe generated dashboard feature from one click."),
+                "priority": payload.get("priority", "High"),
+                "style": payload.get("style", "Dark AI dashboard"),
+                "frontend_route": target_route,
+                "backend_route": item.get("backend_route", "one-click-feature-api"),
+                "approval_text": approval_text,
+                "run_chain_qa": False,
+                "auto_rollback_on_qa_fail": True,
+                "note": "Executed from Approval Center"
+            }
+        )
+
+    return {
+        "ok": False,
+        "message": f"Unsupported approval action: {action_type}"
+    }
+
+@app.get("/agent-chain-runner/approval-center")
+def agent_chain_runner_approval_center():
+    try:
+        items = aac_load_items()
+        pending = [item for item in items if item.get("status") == "pending"]
+
+        return {
+            "ok": True,
+            "items": items,
+            "pending": pending,
+            "count": len(items),
+            "pending_count": len(pending),
+            "generated_at": aac_now()
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to load Approval Center.",
+            "error": str(error),
+            "items": [],
+            "pending": []
+        }
+
+@app.post("/agent-chain-runner/approval-center/create")
+def agent_chain_runner_approval_center_create(request: AACCreateRequest):
+    try:
+        action_type = request.action_type.strip()
+
+        allowed = ["safe_install", "rollback", "clear_run_lock", "locked_safe_flow"]
+        if action_type not in allowed:
+            return {
+                "ok": False,
+                "message": f"Unsupported action_type. Use one of: {', '.join(allowed)}"
+            }
+
+        payload = dict(request.payload or {})
+
+        if action_type == "safe_install":
+            payload["file_name"] = request.file_name
+
+        if action_type == "locked_safe_flow":
+            payload["task"] = request.task
+            payload["priority"] = request.priority
+            payload["style"] = request.style
+
+        item = {
+            "id": str(AACUuid.uuid4()),
+            "action_type": action_type,
+            "label": aac_action_label(action_type),
+            "feature_name": request.feature_name,
+            "target_route": request.target_route.strip().strip("/"),
+            "backend_route": request.backend_route.strip().strip("/"),
+            "required_phrase": aac_required_phrase(action_type),
+            "status": "pending",
+            "note": request.note,
+            "payload": payload,
+            "created_at": aac_now(),
+            "approved_at": "",
+            "rejected_at": "",
+            "executed_at": "",
+            "execution_result": None
+        }
+
+        items = aac_load_items()
+        items.insert(0, item)
+        aac_save_items(items)
+
+        return {
+            "ok": True,
+            "message": "Approval request created.",
+            "approval": item
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Failed to create approval request.",
+            "error": str(error)
+        }
+
+@app.post("/agent-chain-runner/approval-center/approve")
+def agent_chain_runner_approval_center_approve(request: AACApproveRequest):
+    try:
+        items = aac_load_items()
+        index, item = aac_find_item(items, request.approval_id)
+
+        if item is None:
+            return {
+                "ok": False,
+                "message": "Approval item not found."
+            }
+
+        if item.get("status") not in ["pending", "approved"]:
+            return {
+                "ok": False,
+                "message": f"Approval item is already {item.get('status')}."
+            }
+
+        required_phrase = item.get("required_phrase", "")
+        if request.approval_text.strip() != required_phrase:
+            return {
+                "ok": False,
+                "message": f"Wrong approval text. Type {required_phrase} exactly."
+            }
+
+        item["status"] = "approved"
+        item["approved_at"] = aac_now()
+
+        execution_result = None
+
+        if request.execute:
+            execution_result = aac_execute_item(item, request.approval_text.strip())
+            item["execution_result"] = execution_result
+            item["executed_at"] = aac_now()
+            item["status"] = "executed" if execution_result.get("ok") else "execution_failed"
+
+        items[index] = item
+        aac_save_items(items)
+
+        return {
+            "ok": True,
+            "message": "Approval processed.",
+            "approval": item,
+            "execution_result": execution_result
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Approval failed.",
+            "error": str(error)
+        }
+
+@app.post("/agent-chain-runner/approval-center/reject")
+def agent_chain_runner_approval_center_reject(request: AACRejectRequest):
+    try:
+        items = aac_load_items()
+        index, item = aac_find_item(items, request.approval_id)
+
+        if item is None:
+            return {
+                "ok": False,
+                "message": "Approval item not found."
+            }
+
+        if item.get("status") != "pending":
+            return {
+                "ok": False,
+                "message": f"Only pending items can be rejected. Current status: {item.get('status')}"
+            }
+
+        item["status"] = "rejected"
+        item["rejected_at"] = aac_now()
+        item["reject_reason"] = request.reason
+
+        items[index] = item
+        aac_save_items(items)
+
+        return {
+            "ok": True,
+            "message": "Approval rejected.",
+            "approval": item
+        }
+
+    except Exception as error:
+        return {
+            "ok": False,
+            "message": "Reject failed.",
+            "error": str(error)
+        }
